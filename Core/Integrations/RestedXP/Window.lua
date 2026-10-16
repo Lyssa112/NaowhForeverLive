@@ -42,6 +42,8 @@ local LINK_POPUP = "RXP_Link"
 local TARGET_PLACEHOLDER, MOB_PLACEHOLDER = 2056011, 135274
 local PLACEHOLDER_GLYPHS = { [TARGET_PLACEHOLDER] = "gossip", [MOB_PLACEHOLDER] = "combat" }
 local OUTLINE_FLAGS = { outline = "OUTLINE", thick = "THICKOUTLINE", slug = "OUTLINE, SLUG" }
+local REGEN_EVENT = "PLAYER_REGEN_ENABLED"
+local ITEMS_NAME, ITEMS_X, ITEMS_Y, ITEMS_LABEL = "activeItemFrame", 4, -14, "WindowItems"
 
 local window, active, started, pending, styled, wantsBags
 local retake = true
@@ -54,6 +56,8 @@ local watched = setmetatable({}, { __mode = "k" })
 local placeholders = setmetatable({}, { __mode = "k" })
 local followed = setmetatable({}, { __mode = "k" })
 local targetingHooked
+local docked, docking
+local dockHooked = setmetatable({}, { __mode = "k" })
 local faced = {}
 local Draw
 
@@ -373,6 +377,57 @@ local function SkinRestore(part)
     end
 end
 
+-- RestedXP's Active Items window, where the macro, spell and item buttons of a step are (the /sit macro, cooking),
+-- hangs from the window instead of the middle of the screen, where it was easily never seen. It is RestedXP's own
+-- window with the window's look, so its buttons are RestedXP's, and it is not RestedXP's to save: that place would
+-- be kept in its profile, and the window could be gone from it later (the addon off) with the frame lost.
+local function Dock(items)
+    if not (window and Has(items, "SetPoint") and Has(items, "ClearAllPoints")) then return end
+    if InCombatLockdown() and Has(items, "IsProtected") and items:IsProtected() then return end
+    if docked and docked.frame ~= items then docked = nil end
+    if not docked then
+        docked = { frame = items, save = items.savePosition, mouse = items:IsMouseEnabled() }
+        local title = items.title
+        if Has(title, "EnableMouse") then docked.titleMouse = title:IsMouseEnabled() end
+        items.savePosition = false
+        items:EnableMouse(false)
+        if docked.titleMouse ~= nil then title:EnableMouse(false) end
+    end
+    if not dockHooked[items] then
+        dockHooked[items] = true
+        hooksecurefunc(items, "SetPoint", function(self)
+            if active and docked and docked.frame == self and not docking then Dock(self) end
+        end)
+    end
+    local point, relative, relativePoint, x, y = items:GetPoint(1)
+    if point == "TOPLEFT" and relative == window and relativePoint == "BOTTOMLEFT" and x == ITEMS_X and y == ITEMS_Y
+            and items:GetPoint(2) == nil then
+        return
+    end
+    docking = true
+    items:ClearAllPoints()
+    items:SetPoint("TOPLEFT", window, "BOTTOMLEFT", ITEMS_X, ITEMS_Y)
+    docking = false
+end
+
+local function Undock()
+    if not docked then return end
+    local items = docked.frame
+    if InCombatLockdown() and Has(items, "IsProtected") and items:IsProtected() then return end
+    local home = docked
+    docked = nil
+    items.savePosition = home.save
+    items:EnableMouse(home.mouse)
+    if home.titleMouse ~= nil then items.title:EnableMouse(home.titleMouse) end
+    local rxp = _G.RXP
+    local settings = Dig(rxp, "settings")
+    if Dig(settings, "profile", "framePositions", ITEMS_NAME) and Has(settings, "LoadFramePosition") then
+        Run(ITEMS_LABEL, settings.LoadFramePosition, settings, ITEMS_NAME, items)
+    elseif Has(rxp, "ResetItemPosition") then
+        Run(ITEMS_LABEL, rxp.ResetItemPosition)
+    end
+end
+
 local function Skin()
     local frames = SkinFrames()
     if active then
@@ -381,6 +436,7 @@ local function Skin()
         for _, frame in ipairs(frames) do SkinFrame(frame) end
     elseif styled then
         styled = false
+        Undock()
         RestorePlaceholders()
         for _, frame in ipairs(frames) do SkinRestore(frame) end
     end
@@ -579,7 +635,11 @@ local function Build()
     f:SetScript("OnMouseUp", function(_, button)
         if button == "RightButton" then Menu() end
     end)
-    f:SetScript("OnEvent", function() Refresh() end)
+    f:SetScript("OnEvent", function(self)
+        if active then return Refresh() end
+        Undock()
+        if not docked then self:UnregisterEvent(REGEN_EVENT) end
+    end)
     f.back = ns.Solid(f, "BACKGROUND", T.panel, 1)
     f.back:SetAllPoints()
     f.edge = ns.Border(f, T.line)
@@ -1002,6 +1062,8 @@ function Draw()
     wantsBags = false
     if not sizing then Skin() end
     window = window or Build()
+    window:RegisterEvent(REGEN_EVENT)
+    if not sizing then Dock(Dig(_G.RXP, ITEMS_NAME)) end
     local model = sizing and sizingModel or ns.RXPWindowRead() or ns.RXPWindowNoGuide()
     if not sizing and retake then retake = not Take() end
     if not sizing and (model.guide ~= anchorGuide or model.after ~= anchorAfter) then
@@ -1042,6 +1104,7 @@ local function Apply()
             window:UnregisterEvent(BAG_EVENT)
         end
         Skin()
+        if window and not docked then window:UnregisterEvent(REGEN_EVENT) end
     end
 end
 

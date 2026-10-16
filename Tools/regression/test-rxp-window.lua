@@ -2328,6 +2328,99 @@ do
     Check(okBare, "a window with neither UpdateTheme nor UpdateVisuals is no error" .. (okBare and "" or " (" .. tostring(errBare) .. ")"))
     Check(okBare and Is(Fill(bare.rxp.targeting.activeTargetFrame), 0.1, 0.2, 0.3, 0.9)
         and bare.rxp.targeting.activeTargetFrame.paints == 1, "and is left as RestedXP made it")
+
+    -- RestedXP's Active Items window, where the macro, spell and item buttons are, hangs from the window
+    local dock = Begin({ rxpWindow = true }, Both)
+    local win, held = Window(dock), dock.rxp.activeItemFrame
+    local function Docked()
+        local p = held.points[1]
+        return #held.points == 1 and p[1] == "TOPLEFT" and p[2] == win and p[3] == "BOTTOMLEFT" and p[4] == 4 and p[5] == -14
+    end
+    Check(Docked(), "the Active Items window hangs from the window, under its left edge")
+    Check(held.savePosition == false and held.mouse == false and held.title.mouse == false,
+        "it is not RestedXP's to save, and is not dragged away from it")
+    Check(win.events and win.events.PLAYER_REGEN_ENABLED == true, "and the window is told when a fight is over")
+    local clears, clear = 0, held.ClearAllPoints
+    held.ClearAllPoints = function(self)
+        clears = clears + 1
+        clear(self)
+    end
+    dock.rxp.SetStep()
+    Flush(dock)
+    Check(clears == 0 and Docked(), "a redraw leaves it where it is")
+    held:ClearAllPoints()
+    held:SetPoint("CENTER", dock.env.UIParent, "CENTER", 0, 0)
+    Check(Docked(), "RestedXP putting it back in the middle of the screen is put right at once")
+    held.ClearAllPoints = clear
+
+    -- in a fight a frame with buttons of its own is not moved, and is hung when the fight is over
+    held.IsProtected = function() return true end
+    dock.env.InCombatLockdown = function() return true end
+    held:ClearAllPoints()
+    held:SetPoint("CENTER", dock.env.UIParent, "CENTER", 0, 0)
+    Check(not Docked() and held.points[1][1] == "CENTER", "in a fight it is left where it is")
+    dock.env.InCombatLockdown = function() return false end
+    win.scripts.OnEvent(win, "PLAYER_REGEN_ENABLED")
+    Flush(dock)
+    Check(Docked(), "and hung when the fight is over")
+
+    -- the window off: it is RestedXP's again, at the place RestedXP has for it
+    local reset, loaded = 0, nil
+    dock.rxp.ResetItemPosition = function() reset = reset + 1 end
+    dock.ns.SetRXPWindow(false)
+    Flush(dock)
+    Check(held.savePosition == nil and held.mouse == true and held.title.mouse == true and reset == 1
+        and not (win.events and win.events.PLAYER_REGEN_ENABLED), "turned off: it is RestedXP's, in its place, and the window is not told")
+    held:ClearAllPoints()
+    held:SetPoint("CENTER", dock.env.UIParent, "CENTER", 0, 0)
+    Check(held.points[1][1] == "CENTER", "and nothing hangs it any more")
+    dock.rxp.settings = { profile = { framePositions = { activeItemFrame = { { "TOP" } } } },
+        LoadFramePosition = function(_, name, frame) loaded = { name, frame } end }
+    dock.ns.SetRXPWindow(true)
+    Flush(dock)
+    Check(Docked() and held.savePosition == false, "on again: it hangs again")
+    dock.ns.SetRXPWindow(false)
+    Flush(dock)
+    Check(loaded and loaded[1] == "activeItemFrame" and loaded[2] == held and reset == 1,
+        "and a place RestedXP saved for it is the one it goes back to")
+
+    -- turned off in a fight, it is given back when the fight is over
+    local fight = Begin({ rxpWindow = true }, Both)
+    local fwin, fheld = Window(fight), fight.rxp.activeItemFrame
+    fheld.IsProtected = function() return true end
+    fight.env.InCombatLockdown = function() return true end
+    fight.ns.SetRXPWindow(false)
+    Flush(fight)
+    Check(fheld.points[1][2] == fwin and fheld.savePosition == false and fwin.events.PLAYER_REGEN_ENABLED == true,
+        "turned off in a fight it stays where it is, and the window waits for the fight to end")
+    fight.env.InCombatLockdown = function() return false end
+    fwin.scripts.OnEvent(fwin, "PLAYER_REGEN_ENABLED")
+    Check(fheld.savePosition == nil and fheld.mouse == true and not fwin.events.PLAYER_REGEN_ENABLED,
+        "and is given back then, and the window is not told again")
+    fwin.scripts.OnEvent(fwin, "PLAYER_REGEN_ENABLED")
+    Check(fheld.mouse == true, "which is done once")
+
+    -- a frame in its place is the one that is hung, and the old one is let be
+    local swap = Begin({ rxpWindow = true }, Both)
+    local old = swap.rxp.activeItemFrame
+    swap.rxp.activeItemFrame = Satellite(swap, "Active Items")
+    local new = swap.rxp.activeItemFrame
+    swap.rxp.SetStep()
+    Flush(swap)
+    Check(new.points[1] and new.points[1][2] == Window(swap) and new.savePosition == false, "a new frame is the one that hangs")
+    old:ClearAllPoints()
+    old:SetPoint("CENTER", swap.env.UIParent, "CENTER", 0, 0)
+    Check(old.points[1][1] == "CENTER" and new.points[1][2] == Window(swap), "and the old one is let be")
+
+    -- one RestedXP makes later is hung at the next draw
+    local later = Begin({ rxpWindow = true }, function(world, rxp)
+        rxp.targeting = { activeTargetFrame = Satellite(world, "Active Targets") }
+    end)
+    later.rxp.activeItemFrame = Satellite(later, "Active Items")
+    later.rxp.SetStep()
+    Flush(later)
+    Check(later.rxp.activeItemFrame.points[1] and later.rxp.activeItemFrame.points[1][2] == Window(later)
+        and later.rxp.activeItemFrame.savePosition == false, "one RestedXP makes later is hung at the next draw")
 end
 
 -- the icons of ours are drawn as a texture in the window's accent, as it is now

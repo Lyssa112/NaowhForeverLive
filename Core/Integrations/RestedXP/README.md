@@ -280,6 +280,19 @@ Core/Integrations/RestedXP/
   that RestedXP sets again at each `UpdateTargetFrame`), and with a step icon style picked those are the
   gossip and combat glyphs (`RXPIconTexture`), put right after each update and given back when the window
   goes off; a portrait is never touched.
+- The Active Items window is where RestedXP puts the macro, spell and item buttons of a step (the /sit macro of a
+  die step, cooking), and RestedXP puts it in the middle of the screen, so it was easy never to see it beside the
+  window. It hangs from the window (`Dock`: its top left under the window's bottom left, `ITEMS_X` and `ITEMS_Y`
+  leaving room for its title tab, which RestedXP draws above it), and is put back at once when RestedXP moves it (a
+  post-hook on `SetPoint`, with `docking` so that ours does not answer itself). It is RestedXP's window in the
+  window's look, so its buttons are RestedXP's own secure buttons: nothing here makes or changes one. RestedXP
+  keeps the place of every frame at logout, so it is told not to for this one (`savePosition` false) while it
+  hangs, or its profile would hold a place relative to a window that may be gone later (the addon off) and the
+  frame would be lost; the frame's own mouse is off so it is not dragged away (its buttons are not touched).
+  Turned off, it is given back (`savePosition`, the mouse, and the place RestedXP saved or `ResetItemPosition`).
+  A frame with buttons of its own is not moved in a fight, so it waits for `PLAYER_REGEN_ENABLED`, which the
+  window hears while it is on, and after it is off if the window still hangs it. A frame RestedXP makes in its
+  place is the one that hangs.
 - The icon at the start of a row has a fixed size of its own (`ICON_SIZE`, 18, over the text's 13): the
   icon's font string is faced at it, so RestedXP's own icons (`|T...:0|t`, as tall as the text they are in)
   grow with it, and the column and the row are as big. The text is dropped to the middle of an icon that
