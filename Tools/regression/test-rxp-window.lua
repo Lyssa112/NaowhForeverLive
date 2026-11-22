@@ -183,6 +183,8 @@ local function World(account, opts)
     end
     ns.UI = { FontPath = function(name) return "Fonts\\" .. name .. ".ttf" end,
         TexturePath = function(name) return "Textures\\" .. name end }
+    w.printed = {}
+    ns.Print = function(msg) w.printed[#w.printed + 1] = msg end
     ns.Hairline = function() end
     ns.OnePixel = function() return 1 end
     ns.Shared = { Style = { FOREVER_FIELD_RGB = { r = 0, g = 0, b = 0 } }, Parts = {
@@ -204,6 +206,7 @@ local function World(account, opts)
         setfenv(chunk, env)
         chunk("NaowhForever")
     end
+    if opts.setupPending then ns.RXPSetUpPending = function() return true end end
     local make = env.CreateFrame
     env.CreateFrame = function() return Object(w.everything) end
     local icons = assert(loadstring(iconsSource, "Icons"))
@@ -535,6 +538,48 @@ do
     Check(w.settingsMenus == 1 and w.menus == 0, "a right click opens RestedXP's settings menu")
     f.scripts.OnMouseUp(f, "LeftButton")
     Check(w.settingsMenus == 1, "a left click does not")
+end
+
+-- a player who turned the window on and sees none is told why, once for each reason
+do
+    local w = Start({ rxpWindow = true }, { v2 = false })
+    Check(Window(w) == nil and #w.printed == 1 and w.printed[1]:find("V2 interface is off", 1, true),
+        "RestedXP's V2 interface off: the window is not there, and the player is told why")
+    w.ns.RXPWindowStart()
+    w.ns.SetRXPWindow(true)
+    Check(#w.printed == 1, "and told once")
+    w.rxp.v2.IsGuideWindowEnabled = nil
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2 and w.printed[2]:find("changed the interface", 1, true),
+        "the switch gone under every name we know: told that RestedXP changed, which is the other reason")
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2, "and that once too")
+    w.rxp.v2.IsEnabled = function() return true end
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2 and Window(w) ~= nil, "the interface on: the window is built and nothing more is said")
+
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown" })
+    Check(#w.printed == 1 and w.printed[1]:find("changed the interface", 1, true) and Window(w) == nil,
+        "a RestedXP with another name for it: told it changed")
+    w = Start({ rxpWindow = true })
+    Check(#w.printed == 0 and Window(w) ~= nil, "ready: nothing is said")
+    w = Start({}, { v2 = false })
+    Check(#w.printed == 0, "the window not turned on: nothing is said")
+    w = Start({ rxpWindow = true }, { v2 = false, installed = false })
+    Check(#w.printed == 0, "RestedXP not there: nothing is said")
+
+    w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
+    Check(#w.printed == 0, "off while Naowh turns it on at the next reload: nothing, the reload says so")
+    w.ns.RXPSetUpPending = function() return false end
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 1 and w.printed[1]:find("V2 interface is off", 1, true),
+        "and told when it is not coming after all")
+    w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
+    w.ns.RXPSetUpPending = function() return false end
+    w.ns.SetRXPWindow(false)
+    Check(#w.printed == 0, "turned off, it is not told that it cannot show")
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown", setupPending = true })
+    Check(#w.printed == 1, "a changed RestedXP is told whatever is pending")
 end
 
 -- the logo is drawn smooth, as RestedXP draws its own from 4.11.38

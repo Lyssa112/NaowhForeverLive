@@ -18,6 +18,12 @@ local EDGE_SIDES = 2
 local HOVER_ALPHA, ICON_DONE_ALPHA = 0.25, 0.5
 local COUNT_MIN, COUNT_GAP = 2, 2
 local BAG_EVENT = "BAG_UPDATE_DELAYED"
+local V2_SWITCH = { "IsEnabled", "IsGuideWindowEnabled" }
+local WHY_OFF, WHY_CHANGED = "off", "changed"
+local TEXT_WHY = {
+    [WHY_OFF] = ns.L("RestedXP's V2 interface is off, so the Naowh window cannot show. Turn on Enable Beta Features and Enable V2 Interface in RestedXP's settings, then reload."),
+    [WHY_CHANGED] = ns.L("RestedXP changed the interface the Naowh window needs, so it cannot show. Check for an update of Naowh Forever."),
+}
 local SHADOW, SHADOW_ALPHA = 1, 0.9
 local TEXT_FOLD, TEXT_UNFOLD, TEXT_DOT = "-", "+", " \194\183 "
 local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
@@ -60,6 +66,7 @@ local targetingHooked
 local docked, docking
 local dockHooked = setmetatable({}, { __mode = "k" })
 local faced = {}
+local told = {}
 local Draw
 
 local function Settings()
@@ -1088,7 +1095,18 @@ function Draw()
     window:SetShown(not guide or guide:IsShown())
 end
 
+-- a player who turned the window on and sees none is told why, once for each reason
+local function Tell()
+    if not (ns.RXPWindowEnabled() and ns.RXPThemesAvailable()) then return end
+    local why = ns.RXPWindowWhy()
+    if not why or told[why] then return end
+    if why == WHY_OFF and ns.RXPSetUpPending() then return end
+    told[why] = true
+    ns.Print(TEXT_WHY[why])
+end
+
 local function Apply()
+    Tell()
     local want = ns.RXPWindowEnabled() and ns.RXPThemesAvailable() and ns.RXPWindowReady()
     if want == active then
         if active then Refresh() end
@@ -1113,10 +1131,18 @@ local function Hook(owner, name)
     if Has(owner, name) then hooksecurefunc(owner, name, Rebuilt) end
 end
 
-function ns.RXPWindowReady()
+-- why the window cannot be on: nil when it can, "off" when RestedXP's V2 interface is off, "changed" when RestedXP has
+-- none of the names we know for its switch
+function ns.RXPWindowWhy()
     local v2 = Dig(_G.RXP, "v2")
-    local enabled = Has(v2, "IsEnabled") and v2.IsEnabled or Has(v2, "IsGuideWindowEnabled") and v2.IsGuideWindowEnabled
-    return enabled and enabled(v2) and true or false
+    for _, name in ipairs(V2_SWITCH) do
+        if Has(v2, name) then return not v2[name](v2) and WHY_OFF or nil end
+    end
+    return WHY_CHANGED
+end
+
+function ns.RXPWindowReady()
+    return ns.RXPWindowWhy() == nil
 end
 
 function ns.RXPWindowStart()
