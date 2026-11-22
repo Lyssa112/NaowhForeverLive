@@ -107,6 +107,10 @@ Core/Integrations/RestedXP/
   none of the names we know for that switch, which is what a RestedXP update that renames it looks like. Until
   4.11.38's rename it was silent: the window just did not show. Off is not said while Naowh is about to turn
   that interface on at the next reload (`ns.RXPSetUpPending`), as that reload is the answer.
+- After a RestedXP update, `python Tools/build/rxp_contract.py` (the Forever client's RXPGuides folder, or the path
+  given) lists each function, frame and field this folder reaches into that RestedXP's Lua no longer has. A name
+  still written there is all it can say: the window's tests are for what it does. It asks for either name of the V2
+  switch, so it is a third one it reports.
 - The list under the active step is the guide's steps as `v2:BuildGuideStepsSnapshot` has them, which
   is what RestedXP's own v2 guide window lists: a step it hides is not listed, and a step done is, a
   little dimmer, so that a step can be gone back to. It starts at the first step after the active one
