@@ -770,6 +770,64 @@ do
     local plain = Macro(off, "Herb Baked Egg", BODY, 132834)
     Redraw(off)
     Check(plain.dragFor == nil, "with the window off nothing is wired")
+
+    -- what a step has is listed the first time it is shown: RestedXP's V2 lists a step's macros, spells and items before it
+    -- has made them, so the first time the window is empty
+    local s = Setup()
+    s.rxp.activeMacros, s.rxp.activeSpells, s.rxp.activeItems = {}, {}, {}
+    s.updates = 0
+    s.rxp.UpdateItemFrame = function() s.updates = s.updates + 1 end
+    local steps = s.rxp.RXPFrame.activeSteps
+    steps[1].activeMacros = { ["134400:Sit"] = "/sit" }
+    steps[1].activeSpells = { [8004] = "p" }
+    steps[1].activeItems = { [6948] = "" }
+    steps[3].activeMacros = { ["1:Idle"] = "/idle" }
+    Redraw(s)
+    Check(s.rxp.activeMacros["134400:Sit"] == "/sit" and s.rxp.activeSpells[8004] == "p" and s.rxp.activeItems[6948] == "",
+        "what the active steps have is put in RestedXP's lists: a macro, a spell and an item")
+    Check(s.updates == 1, "and the window is made again, once")
+    Check(s.rxp.activeMacros["1:Idle"] == nil, "what a step that is not active has is not")
+    Redraw(s)
+    Check(s.updates == 1, "with nothing new the window is not made again")
+    steps[1].activeMacros["2:New"] = "/new"
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["2:New"] == "/new" and s.updates == 2, "after RestedXP has bound a step's elements: what it made is put in, and the window again")
+    for key in pairs(s.rxp.activeMacros) do s.rxp.activeMacros[key] = nil end
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["134400:Sit"] == "/sit" and s.rxp.activeMacros["2:New"] == "/new" and s.updates == 3,
+        "a step set again, with RestedXP's lists emptied: they are filled again")
+    s.rxp.activeMacros["134400:Sit"] = "mine"
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["134400:Sit"] == "mine" and s.updates == 3, "an entry that is there is left as it is, and needs no window")
+    s.env.InCombatLockdown = function() return true end
+    s.rxp.activeMacros["2:New"] = nil
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["2:New"] == nil and s.updates == 3, "in a fight nothing is done")
+    s.env.InCombatLockdown = function() return false end
+    steps[1].activeItems = false
+    s.rxp.activeSpells = nil
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["2:New"] == "/new" and #s.reported == 0, "a list or a step's list that is missing is passed over, and what is there is put in")
+    local update = s.rxp.UpdateItemFrame
+    s.rxp.UpdateItemFrame = nil
+    steps[1].activeMacros["3:Later"] = "/later"
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["3:Later"] == "/later" and #s.reported == 0, "a RestedXP with no window to make: the lists are filled all the same")
+    s.rxp.UpdateItemFrame = function() error("update") end
+    steps[1].activeMacros["4:Raises"] = "/raises"
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(s.rxp.activeMacros["4:Raises"] == "/raises" and #s.reported == 1 and s.reported[1]:find("update", 1, true),
+        "and a window that raises as it is made is reported and not raised")
+    s.rxp.UpdateItemFrame = update
+    s.rxp.RXPFrame.activeSteps = nil
+    s.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(#s.reported == 1, "and with no steps nothing happens: no new error")
+    local still = Setup({})
+    still.rxp.activeMacros, still.rxp.activeSpells, still.rxp.activeItems = {}, {}, {}
+    still.rxp.RXPFrame.activeSteps[1].activeMacros = { ["134400:Sit"] = "/sit" }
+    Redraw(still)
+    still.rxp.v2:UpdateActiveStepsFrame({}, nil)
+    Check(next(still.rxp.activeMacros) == nil, "with the window off RestedXP's lists are left alone")
 end
 
 -- the logo is the one of RestedXP's active theme, as its own V2 window has it, drawn smooth as it draws it

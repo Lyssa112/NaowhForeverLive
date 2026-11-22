@@ -1044,7 +1044,7 @@ function Draw()
     DrawChrome(y, listH, folded, listed)
     local guide = Dig(_G.RXPV2GuideWindow, "frame")
     window:SetShown(not guide or guide:IsShown())
-    if not sizing then ns.RXPItemsDrag(Dig(_G.RXP, ITEMS_NAME)) end
+    if not sizing then ns.RXPItemsStart(Dig(_G.RXP, ITEMS_NAME)) end
 end
 
 -- a player who turned the window on and sees none is told why, once for each reason

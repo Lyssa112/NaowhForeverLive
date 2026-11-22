@@ -1,4 +1,5 @@
--- WindowItems.lua: the macro, spell and item buttons of RestedXP's Active Items window can be dragged onto an action bar.
+-- WindowItems.lua: RestedXP's Active Items window: what a step has is listed the first time it is shown, and its buttons
+-- (macros, spells, items) can be dragged onto an action bar.
 local ns = _G.NaowhForever
 local Safe = ns.RXPSafe
 local Has, Dig, Run = Safe.Has, Safe.Dig, Safe.Run
@@ -10,8 +11,10 @@ local MACRO_ICON = 134400
 local TEXT_LONG = ns.L("This macro is too long to be dragged onto a bar.")
 local TEXT_FULL = ns.L("Your character's macros are full, so this macro cannot be dragged onto a bar. Delete one first.")
 
+local LISTS = { "activeMacros", "activeSpells", "activeItems" }
+
 local wired = setmetatable({}, { __mode = "k" })
-local hooked
+local hooked, synced
 
 -- a function of the game, from its own table when it has moved into one (C_Spell) and else the global
 local function Game(table, name)
@@ -72,12 +75,46 @@ local function Wire(items)
     end
 end
 
+-- RestedXP's V2 copies what the active steps want (their macros, spells and items) into its lists for the window before it
+-- has bound the steps' elements, which is what makes them, so the first time a step is shown the lists are empty and so is
+-- the window: it came the second time. Once it has bound them, what the active steps have is put in the lists, and the
+-- window is made again, once.
+local function Sync()
+    if InCombatLockdown() then return end
+    local rxp = _G.RXP
+    local steps = Dig(rxp, "RXPFrame", "activeSteps")
+    if type(steps) ~= "table" then return end
+    local added
+    for _, step in ipairs(steps) do
+        if step.active then
+            for _, name in ipairs(LISTS) do
+                local have, list = step[name], rxp[name]
+                if type(have) == "table" and type(list) == "table" then
+                    for key, value in pairs(have) do
+                        if list[key] == nil then
+                            list[key] = value
+                            added = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if added and Has(rxp, "UpdateItemFrame") then Run(NAME, rxp.UpdateItemFrame) end
+end
+
 -- the buttons RestedXP has now, and those it makes later as it updates the window
-function ns.RXPItemsDrag(items)
+function ns.RXPItemsStart(items)
     local rxp = _G.RXP
     if not hooked and Has(rxp, "UpdateItemFrame") then
         hooked = true
         hooksecurefunc(rxp, "UpdateItemFrame", function() Wire(Dig(_G.RXP, "activeItemFrame")) end)
     end
+    local v2 = Dig(rxp, "v2")
+    if not synced and Has(v2, "UpdateActiveStepsFrame") then
+        synced = true
+        hooksecurefunc(v2, "UpdateActiveStepsFrame", Sync)
+    end
+    Sync()
     Wire(items)
 end

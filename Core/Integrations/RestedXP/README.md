@@ -111,6 +111,12 @@ Core/Integrations/RestedXP/
   given) lists each function, frame and field this folder reaches into that RestedXP's Lua no longer has. A name
   still written there is all it can say: the window's tests are for what it does. It asks for either name of the V2
   switch, so it is a third one it reports.
+- RestedXP's V2 puts what the active steps want in its lists for the Active Items window (`activeMacros`,
+  `activeSpells`, `activeItems`) in `SetStep`, before its `UpdateActiveStepsFrame` has bound the steps' elements, which is
+  what makes a step's macro, spell or item, so the first time a step is shown the lists and the window are empty and it
+  came the second time (the /sit macro of a die step was not there). `Sync` in `WindowItems.lua`, after each
+  `UpdateActiveStepsFrame` and at each draw, puts what the active steps have in the lists where it is missing and makes
+  the window again, once, out of combat; an entry that is there is left as it is.
 - The buttons of RestedXP's Active Items window (the macros of a die step or cooking, spells, items) can be dragged
   onto an action bar, which RestedXP lets only a bag item do, with a modifier (`WindowItems.lua`, wired from `Draw`
   and after each `UpdateItemFrame`, out of combat). A spell, a toy, an item in a bag or one worn is picked up where

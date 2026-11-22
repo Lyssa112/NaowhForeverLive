@@ -36,6 +36,10 @@ CONTRACT = [
     ("guide", "RXPFrame.activeSteps", r"RXPFrame\.activeSteps"),
     ("guide", "questAccept", r"addon\.questAccept"),
     ("guide", "updateSteps", r"addon\.updateSteps"),
+    ("guide", "UpdateItemFrame (the Active Items window)", r"function addon\.UpdateItemFrame"),
+    ("guide", "activeMacros (the Active Items window's list)", r"addon\.activeMacros\s*="),
+    ("guide", "activeSpells (the Active Items window's list)", r"addon\.activeSpells\s*="),
+    ("guide", "activeItems (the Active Items window's list)", r"addon\.activeItems\s*="),
     # the V2 interface the window is for
     ("v2", "the V2 switch (IsEnabled, or IsGuideWindowEnabled before 4.11.38)",
      r"function addon\.v2[:.](IsEnabled|IsGuideWindowEnabled)"),
