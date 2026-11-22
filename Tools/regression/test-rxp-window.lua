@@ -11,6 +11,7 @@ local themesSource = Read("Core/Integrations/RestedXP/Themes.lua")
 local settingsSource = Read("Core/Integrations/RestedXP/WindowSettings.lua")
 local modelSource = Read("Core/Integrations/RestedXP/WindowModel.lua")
 local menuSource = Read("Core/Integrations/RestedXP/WindowMenu.lua")
+local itemsSource = Read("Core/Integrations/RestedXP/WindowItems.lua")
 local windowSource = Read("Core/Integrations/RestedXP/Window.lua")
 local iconsSource = Read("Core/Integrations/RestedXP/Icons.lua")
 
@@ -47,6 +48,13 @@ local function Object(everything)
     function o:SetTextColor(r, g, b) self.color = { r, g, b } end
     function o:SetColorTexture(r, g, b, a) self.solid = { r, g, b, a } end
     function o:SetTexture(path, _, _, filter) self.texture, self.filter = path, filter end
+    function o:GetTexture() return self.texture end
+    function o:RegisterForDrag(...) self.dragFor = { ... } end
+    function o:SetAttribute(key, value)
+        self.attrs = self.attrs or {}
+        self.attrs[key] = value
+    end
+    function o:GetAttribute(key) return self.attrs and self.attrs[key] end
     function o:RegisterForClicks(...) self.clicksFor = { ... } end
     function o:RegisterEvent(event)
         self.events = self.events or {}
@@ -201,7 +209,8 @@ local function World(account, opts)
         ForeverAtlas = function() return false end } }
     ns.AddonFontPath = function(classic) return classic and "Fonts\\Forever.ttf" or "Fonts\\Naowh.ttf" end
     for _, part in ipairs({ { themesSource, "Themes" }, { settingsSource, "WindowSettings" },
-            { modelSource, "WindowModel" }, { menuSource, "WindowMenu" }, { windowSource, "Window" } }) do
+            { modelSource, "WindowModel" }, { menuSource, "WindowMenu" }, { itemsSource, "WindowItems" },
+            { windowSource, "Window" } }) do
         local chunk = assert(loadstring(part[1], part[2]))
         setfenv(chunk, env)
         chunk("NaowhForever")
@@ -260,8 +269,14 @@ local function Rxp(w, opts)
         locale = { Get = function(text) return text end },
         RXPFrame = { activeSteps = { active, tipOnly, idle }, DropDownMenu = function() w.menus = w.menus + 1 end },
         v2 = { snapshots = 0 },
+        ui = { v2 = {} },
         SetStep = function() end,
     }
+    if not opts.noUi then
+        function rxp.ui.v2:GetTexture(name) return "Interface/AddOns/RXPGuides/Textures/v2/" .. name end
+    end
+    if opts.uiRaises then rxp.ui.v2.GetTexture = function() error("texture") end end
+    if opts.uiPath ~= nil then rxp.ui.v2.GetTexture = function() return opts.uiPath end end
     rxp.settings = { profile = { hideCompletedSteps = false, showUnusedGuides = false } }
     function rxp.settings:SetHideCompletedSteps(value)
         self.profile.hideCompletedSteps = value
@@ -582,15 +597,200 @@ do
     Check(#w.printed == 1, "a changed RestedXP is told whatever is pending")
 end
 
--- the logo is drawn smooth, as RestedXP draws its own from 4.11.38
+-- the buttons of RestedXP's Active Items window can be dragged onto an action bar
 do
-    local w = Start({ rxpWindow = true })
-    local box
-    for _, o in ipairs(w.frames) do
-        if o.label and o.logo then box = o end
+    local function Setup(account)
+        local w = Start(account or { rxpWindow = true })
+        local env = w.env
+        w.calls, w.macros, w.charMacros = {}, {}, 0
+        local function Note(...) w.calls[#w.calls + 1] = { ... } end
+        env.GetNumMacros = function() return 0, w.charMacros end
+        env.GetMacroIndexByName = function(name) return w.macros[name] or 0 end
+        env.CreateMacro = function(...) Note("create", ...) return 121 end
+        env.EditMacro = function(...) Note("edit", ...) return (...) end
+        env.PickupMacro = function(...) Note("macro", ...) end
+        env.C_Spell = { PickupSpell = function(...) Note("spell", ...) end }
+        env.C_ToyBox = { PickupToyBoxItem = function(...) Note("toy", ...) end }
+        env.C_Container = { PickupContainerItem = function(...) Note("bag", ...) end }
+        env.PickupInventoryItem = function(...) Note("equipped", ...) end
+        w.Note = Note
+        w.items = Object(w.everything)
+        w.list, w.reads = {}, 0
+        local base = getmetatable(w.items).__index
+        setmetatable(w.items, { __index = function(t, key)
+            if key == "buttonList" then
+                w.reads = w.reads + 1
+                return w.list
+            end
+            return base(t, key)
+        end })
+        w.rxp.activeItemFrame = w.items
+        w.rxp.UpdateItemFrame = function() end
+        return w
     end
-    Check(box.logo.texture:find("rxp_logo", 1, true) and box.logo.filter == "TRILINEAR",
-        "the logo has RestedXP's own picture and its smooth filter")
+    local function Button(w, fields)
+        local b = Object(w.everything)
+        b.regs = 0
+        function b:RegisterForDrag(...)
+            self.regs = self.regs + 1
+            self.dragFor = { ... }
+        end
+        for k, v in pairs(fields) do b[k] = v end
+        w.list[#w.list + 1] = b
+        w.rxp.UpdateItemFrame()
+        return b
+    end
+    local function Macro(w, name, body, icon)
+        local texture = Object(w.everything)
+        texture:SetTexture(icon)
+        return Button(w, { macro = true, name = name, icon = texture, attrs = { macrotext = body } })
+    end
+    local function Redraw(w)
+        w.rxp.v2:UpdateGuideWindow()
+        Flush(w)
+    end
+    local function Drag(b) b.hooks.OnDragStart(b) end
+    local BODY = "/cast Cooking\n/run print(1)"
+
+    local w = Setup()
+    local egg = Macro(w, "Herb Baked Egg", BODY, 132834)
+    Check(egg.dragFor == nil, "a button is not wired before the window draws")
+    Redraw(w)
+    Check(egg.dragFor and egg.dragFor[1] == "LeftButton" and egg.regs == 1 and egg.hooks.OnDragStart ~= nil,
+        "a button of the Active Items window can be dragged with the left button")
+    Redraw(w)
+    Check(egg.regs == 1, "and is wired once")
+    local reads = w.reads
+    w.rxp.UpdateItemFrame()
+    Check(w.reads == reads + 1, "RestedXP's update is hooked once, however often the window draws")
+    local late = Button(w, { spell = true, itemId = 8004 })
+    w.rxp.UpdateItemFrame()
+    Check(late.dragFor ~= nil, "a button RestedXP makes as it updates the window is wired as well")
+
+    -- a macro: a real one of ours, named apart from the player's own
+    w.macros["Herb Baked Egg"] = 3
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "create" and w.calls[1][2] == "RXP Herb Baked E" and w.calls[1][3] == 132834
+        and w.calls[1][4] == BODY and w.calls[1][5] == true and w.calls[2][1] == "macro" and w.calls[2][2] == 121,
+        "a macro is made for the character, named for ours, with the button's picture and text, and picked up")
+    w.calls = {}
+    w.macros["RXP Herb Baked E"] = 125
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "edit" and w.calls[1][2] == 125 and w.calls[1][3] == "RXP Herb Baked E"
+        and w.calls[1][4] == 132834 and w.calls[1][5] == BODY and w.calls[2][1] == "macro" and w.calls[2][2] == 125,
+        "one of ours already there is written again, and picked up: the player's own is not touched")
+    w.macros = {}
+    w.calls = {}
+    local noicon = Button(w, { macro = true, name = "Sit", attrs = { macrotext = "/sit" } })
+    w.rxp.UpdateItemFrame()
+    Drag(noicon)
+    Check(w.calls[1] and w.calls[1][2] == "RXP Sit" and w.calls[1][3] == 134400, "a button with no picture has the question mark")
+
+    -- what cannot be made says so, and nothing is picked up
+    w.calls, w.printed = {}, {}
+    local long = Macro(w, "Long", ("x"):rep(256), 1)
+    local exact = Macro(w, "Exact", ("x"):rep(255), 1)
+    w.rxp.UpdateItemFrame()
+    Drag(long)
+    Check(#w.calls == 0 and #w.printed == 1 and w.printed[1]:find("too long", 1, true), "a text of 256 is too long: said, and not made")
+    Drag(exact)
+    Check(#w.calls == 2 and w.calls[1][1] == "create", "and one of 255 is not")
+    w.calls, w.printed, w.charMacros = {}, {}, 18
+    Drag(egg)
+    Check(#w.calls == 0 and #w.printed == 1 and w.printed[1]:find("macros are full", 1, true),
+        "a character with 18 macros has no room: said, and nothing is made")
+    w.charMacros = 17
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "create", "and with 17 there is")
+    w.calls, w.printed, w.charMacros = {}, {}, 18
+    w.macros["RXP Herb Baked E"] = 125
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "edit", "but one of ours that is there needs no room")
+    w.macros, w.calls, w.charMacros = {}, {}, 0
+    Drag(Macro(w, "Nothing", "", 1))
+    Check(#w.calls == 0, "a macro with no text is not made")
+    local bare = Button(w, { macro = true, name = "Bare" })
+    Drag(bare)
+    Check(#w.calls == 0, "nor one of a button with none")
+
+    -- the rest of what the window has
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 1 and w.calls[1][1] == "spell" and w.calls[1][2] == 8004, "a spell is picked up")
+    Drag(Button(w, { toy = true, itemId = 64383 }))
+    Drag(Button(w, { bag = 0, slot = 3, itemId = 6948 }))
+    Drag(Button(w, { invSlot = 13, itemId = 2000 }))
+    Drag(Button(w, { itemId = 5 }))
+    Check(#w.calls == 4 and w.calls[2][1] == "toy" and w.calls[2][2] == 64383 and w.calls[3][1] == "bag"
+        and w.calls[3][2] == 0 and w.calls[3][3] == 3 and w.calls[4][1] == "equipped" and w.calls[4][2] == 13,
+        "a toy, an item in a bag and one worn are picked up where they are, and one that is nowhere is not")
+    w.env.C_Spell = nil
+    w.env.PickupSpell = function(...) w.Note("spell-global", ...) end
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 1 and w.calls[1][1] == "spell-global" and w.calls[1][2] == 8004, "a game that has the spell call as a global: that")
+    w.env.C_Spell = {}
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 1 and w.calls[1][1] == "spell-global", "a C_Spell without the call: the global one")
+    w.env.PickupSpell = nil
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 0 and #w.reported == 0, "a game with neither: nothing happens, and nothing is reported")
+
+    -- not in a fight, not with something on the cursor, and nothing raised
+    w.calls = {}
+    w.env.InCombatLockdown = function() return true end
+    Drag(egg)
+    Check(#w.calls == 0, "in a fight nothing is picked up")
+    local fresh = Button(w, { spell = true, itemId = 1 })
+    w.rxp.UpdateItemFrame()
+    Check(fresh.dragFor == nil, "and a button made in a fight is not wired then")
+    w.env.InCombatLockdown = function() return false end
+    Redraw(w)
+    Check(fresh.dragFor ~= nil, "but when it is over")
+    w.env.GetCursorInfo = function() return "item", 6948 end
+    Drag(egg)
+    Check(#w.calls == 0, "with something on the cursor nothing is picked up")
+    w.env.GetCursorInfo = nil
+    w.env.CreateMacro = function() error("create") end
+    w.macros = {}
+    Drag(egg)
+    Check(#w.calls == 0 and #w.reported == 1 and w.reported[1]:find("create", 1, true),
+        "a macro that cannot be made is reported and not raised, and none is picked up")
+    w.env.C_Spell = { PickupSpell = function() error("spell") end }
+    Drag(late)
+    Check(#w.calls == 0, "and a pickup that raises is not raised")
+
+    -- the window off: the buttons are RestedXP's own
+    local off = Setup({})
+    local plain = Macro(off, "Herb Baked Egg", BODY, 132834)
+    Redraw(off)
+    Check(plain.dragFor == nil, "with the window off nothing is wired")
+end
+
+-- the logo is the icon RestedXP's own V2 window has, drawn smooth as it draws it
+do
+    local function Logo(opts)
+        local w = Start({ rxpWindow = true }, opts)
+        local box
+        for _, o in ipairs(w.frames) do
+            if o.label and o.logo then box = o end
+        end
+        return box.logo, w
+    end
+    local logo = Logo()
+    Check(logo.texture == "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo" and logo.filter == "TRILINEAR",
+        "the logo is the icon of RestedXP's V2 window, with its smooth filter")
+    logo = Logo({ noUi = true })
+    Check(logo.texture:find("rxp_logo-64", 1, true) and logo.filter == "TRILINEAR",
+        "a RestedXP that has no path for it: its older logo")
+    local w
+    logo, w = Logo({ uiRaises = true })
+    Check(logo.texture:find("rxp_logo-64", 1, true) and #w.reported == 1 and w.reported[1]:find("texture", 1, true),
+        "one that raises: the older logo, and it is reported and not raised")
+    Check(Logo({ uiPath = "" }).texture:find("rxp_logo-64", 1, true) and Logo({ uiPath = 5 }).texture:find("rxp_logo-64", 1, true),
+        "and one that gives no path, or no text: the older logo")
 end
 
 -- the menu is RestedXP's own with the three switches of its V2 settings menu after its guides
@@ -2676,7 +2876,6 @@ do
     local account = { rxpWindow = true }
     local w = Start(account)
     local f = Window(w)
-    local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
     local function Boxes()
         local out = {}
         for _, o in ipairs(w.frames) do
@@ -2685,8 +2884,8 @@ do
         return out
     end
     local boxes = Boxes()
-    Check(#boxes == 1 and boxes[1].logo.shown and boxes[1].logo.texture == LOGO,
-        "RestedXP's logo, from RestedXP's own files, is in the current step's box")
+    Check(#boxes == 1 and boxes[1].logo.shown and boxes[1].logo.texture == "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo",
+        "RestedXP's logo, the icon of its V2 window from its own files, is in the current step's box")
     local logo = boxes[1].logo
     Check(logo.points[1][1] == "TOPRIGHT" and logo.points[1][2] == boxes[1] and logo.points[1][3] == "TOPRIGHT"
         and logo.points[1][4] == -7 and logo.points[1][5] == -7, "in its top right corner")

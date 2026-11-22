@@ -27,6 +27,7 @@ local TEXT_WHY = {
 local SHADOW, SHADOW_ALPHA = 1, 0.9
 local TEXT_FOLD, TEXT_UNFOLD, TEXT_DOT = "-", "+", " \194\183 "
 local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
+local V2_LOGO = "rxp-icon-logo"
 local LOGO_FILTER = "TRILINEAR"
 local GRADIENT = ns.MEDIA .. "NaowhGradient.tga"
 local GRIP_UP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up"
@@ -675,6 +676,13 @@ local function Build()
     return f
 end
 
+-- the icon RestedXP's own V2 window has in its header, by the path it gives its textures; its older logo when it has none
+local function LogoPath()
+    local ui = Dig(_G.RXP, "ui", "v2")
+    local path = Has(ui, "GetTexture") and Run("WindowLogo", ui.GetTexture, ui, V2_LOGO)
+    return type(path) == "string" and path ~= "" and path or LOGO
+end
+
 local function MakeBox()
     local T = ns.THEME
     local box = CreateFrame("Button", nil, window)
@@ -688,7 +696,7 @@ local function MakeBox()
     box.edge = ns.Border(box)
     box.label = Text(box, "rxpWindowTextSize")
     box.logo = box:CreateTexture(nil, "OVERLAY")
-    box.logo:SetTexture(LOGO, nil, nil, LOGO_FILTER)
+    box.logo:SetTexture(LogoPath(), nil, nil, LOGO_FILTER)
     return box
 end
 
@@ -1071,7 +1079,11 @@ function Draw()
     if not sizing then Skin() end
     window = window or Build()
     window:RegisterEvent(REGEN_EVENT)
-    if not sizing then Dock(Dig(_G.RXP, ITEMS_NAME)) end
+    if not sizing then
+        local items = Dig(_G.RXP, ITEMS_NAME)
+        Dock(items)
+        ns.RXPItemsDrag(items)
+    end
     local model = sizing and sizingModel or ns.RXPWindowRead() or ns.RXPWindowNoGuide()
     if not sizing and retake then retake = not Take() end
     if not sizing and (model.guide ~= anchorGuide or model.after ~= anchorAfter) then

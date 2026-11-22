@@ -111,6 +111,13 @@ Core/Integrations/RestedXP/
   given) lists each function, frame and field this folder reaches into that RestedXP's Lua no longer has. A name
   still written there is all it can say: the window's tests are for what it does. It asks for either name of the V2
   switch, so it is a third one it reports.
+- The buttons of RestedXP's Active Items window (the macros of a die step or cooking, spells, items) can be dragged
+  onto an action bar, which RestedXP lets only a bag item do, with a modifier (`WindowItems.lua`, wired from `Draw`
+  and after each `UpdateItemFrame`, out of combat). A spell, a toy, an item in a bag or one worn is picked up where
+  it is. A macro has no place to be picked up from, so a real one is made: per character, named `RXP ` and the first
+  twelve letters of the button's name (so that no macro of the player's is ever written over: one of that name is
+  ours, and written again with the button's text each time), with the button's picture. Over 255 letters or with
+  all 18 of the character's macros made, it says so and picks nothing up; in a fight nothing is.
 - The list under the active step is the guide's steps as `v2:BuildGuideStepsSnapshot` has them, which
   is what RestedXP's own v2 guide window lists: a step it hides is not listed, and a step done is, a
   little dimmer, so that a step can be gone back to. It starts at the first step after the active one
@@ -229,9 +236,11 @@ Core/Integrations/RestedXP/
   thing counted twice beside the guide's. The box's own opacity is a setting (`rxpWindowBoxOpacity`) and
   not a part of its color. The bars are in the Naowh Gradient to start (`GRADIENT`, which is `ns.MEDIA`'s,
   so a texture of SharedMedia is only needed when another is wanted).
-- RestedXP's logo (`Textures/rxp_logo-64`, the one its own window and quest log use) is drawn from
-  RestedXP's files in the top right corner of the current step's box (the first, when there are more),
-  untinted, at a fixed size (`LOGO_SIZE`). It is a texture of the
+- RestedXP's logo is the icon its own V2 window has in its header (`Textures/v2/rxp-icon-logo`, got from its
+  `ui.v2:GetTexture` so that a rename of the file does not show here; its older `Textures/rxp_logo-64` when it has
+  no such call), drawn from RestedXP's files with the smooth filter (`TRILINEAR`) it draws it with, in the top
+  right corner of the current step's box (the first, when there are more), untinted, at a fixed size
+  (`LOGO_SIZE`). It is a texture of the
   box, so it is above the box's background, and the rows start below it, or below the label when it is
   smaller. The window hides RestedXP's own and so would otherwise show nothing of it anywhere.
 - The rows after the first of a step are set in (`INDENT`, fixed), and narrower by as much, so a

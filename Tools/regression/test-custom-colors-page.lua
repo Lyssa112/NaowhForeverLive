@@ -13,6 +13,7 @@ local rxpSource = Read("Core/Integrations/RestedXP/Themes.lua")
 local settingsSource = Read("Core/Integrations/RestedXP/WindowSettings.lua")
 local modelSource = Read("Core/Integrations/RestedXP/WindowModel.lua")
 local menuSource = Read("Core/Integrations/RestedXP/WindowMenu.lua")
+local itemsSource = Read("Core/Integrations/RestedXP/WindowItems.lua")
 local windowSource = Read("Core/Integrations/RestedXP/Window.lua")
 local iconsSource = Read("Core/Integrations/RestedXP/Icons.lua")
 local source = Read("Core/Options/SettingsPage.lua")
@@ -65,7 +66,8 @@ local function RealCore(account, rxp, up)
     setfenv(module, env)
     module("NaowhForever")
     for _, part in ipairs({ { settingsSource, "RXPWindowSettings" }, { modelSource, "RXPWindowModel" },
-            { menuSource, "RXPWindowMenu" }, { windowSource, "RXPWindow" } }) do
+            { menuSource, "RXPWindowMenu" }, { itemsSource, "RXPWindowItems" },
+            { windowSource, "RXPWindow" } }) do
         local built = assert(loadstring(part[1], part[2]))
         setfenv(built, env)
         built("NaowhForever")
