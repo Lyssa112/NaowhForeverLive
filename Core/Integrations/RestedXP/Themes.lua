@@ -480,11 +480,20 @@ local function PaintText(arrow, on)
     text:SetWidth(ns.RXPArrowEnabled() and ns.RXPArrowObjective() and TEXT_WIDTH or 0)
 end
 
+-- a text with nothing to read in it: only digits, marks and spaces once its colors and pictures are gone, such as the
+-- +1 a guide puts in a step it hides from the window
+local function Bare(text)
+    local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T[^|]*|t", ""):gsub("|A[^|]*|a", "")
+    return plain:find("^[%d%p%s]*$") ~= nil
+end
+
+local function Readable(raw)
+    return type(raw) == "string" and not Bare(raw) and raw or nil
+end
+
 local function Words(source)
     if type(source) ~= "table" or source.completed or source.skip or source.hideTooltip then return nil end
-    local raw = source.text ~= " " and source.text or nil
-    raw = raw or source.tooltipText or source.rawtext
-    if type(raw) == "string" and raw ~= "" then return raw end
+    return Readable(source.text) or Readable(source.tooltipText) or Readable(source.rawtext)
 end
 
 local function Source(element)
