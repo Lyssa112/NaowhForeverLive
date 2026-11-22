@@ -301,9 +301,13 @@ Core/Integrations/RestedXP/
   goes off; a portrait is never touched.
 - The Active Items window is where RestedXP puts the macro, spell and item buttons of a step (the /sit macro of a
   die step, cooking), and RestedXP puts it in the middle of the screen, so it was easy never to see it beside the
-  window. It hangs from the window (`Dock`: its top left under the window's bottom left, `ITEMS_X` and `ITEMS_Y`
-  leaving room for its title tab, which RestedXP draws above it), and is put back at once when RestedXP moves it (a
-  post-hook on `SetPoint`, with `docking` so that ours does not answer itself). It is RestedXP's window in the
+  window. It is placed under the window's bottom left (`Dock`: the window's `GetLeft` and `GetBottom` as offsets from the
+  screen's, the two scales divided out, `ITEMS_X` and `ITEMS_Y` leaving room for its title tab, which RestedXP draws
+  above it), and is put back at once when RestedXP moves it (a post-hook on `SetPoint`, with `docking` so that ours
+  does not answer itself). It is anchored to the screen and never to the window: a frame with secure buttons anchored
+  to another makes that one protected, and the window's size and place, which its own draws set in a fight, could not
+  be (the game blocked `SetWidth` there). So it follows by being placed again where the window is drawn, while it is
+  dragged (an `OnUpdate`, only then) and when it is let go. It is RestedXP's window in the
   window's look, so its buttons are RestedXP's own secure buttons: nothing here makes or changes one. RestedXP
   keeps the place of every frame at logout, so it is told not to for this one (`savePosition` false) while it
   hangs, or its profile would hold a place relative to a window that may be gone later (the addon off) and the

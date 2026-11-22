@@ -51,7 +51,7 @@ local TARGET_PLACEHOLDER, MOB_PLACEHOLDER = 2056011, 135274
 local PLACEHOLDER_GLYPHS = { [TARGET_PLACEHOLDER] = "gossip", [MOB_PLACEHOLDER] = "combat" }
 local OUTLINE_FLAGS = { outline = "OUTLINE", thick = "THICKOUTLINE", slug = "OUTLINE, SLUG" }
 local REGEN_EVENT = "PLAYER_REGEN_ENABLED"
-local ITEMS_NAME, ITEMS_X, ITEMS_Y, ITEMS_LABEL = "activeItemFrame", 4, -14, "WindowItems"
+local ITEMS_NAME, ITEMS_X, ITEMS_Y, ITEMS_LABEL, ITEMS_SLACK = "activeItemFrame", 4, -14, "WindowItems", 0.01
 
 local window, active, started, pending, styled, wantsBags
 local retake = true
@@ -390,6 +390,16 @@ end
 -- hangs from the window instead of the middle of the screen, where it was easily never seen. It is RestedXP's own
 -- window with the window's look, so its buttons are RestedXP's, and it is not RestedXP's to save: that place would
 -- be kept in its profile, and the window could be gone from it later (the addon off) with the frame lost.
+-- under the window's bottom left, as offsets from the screen's, in the Active Items window's own scale: it is anchored to
+-- the screen and not to the window, as a frame with secure buttons anchored to another makes that one protected, and the
+-- window's size and place, which its own draws set in a fight, could not be
+local function Beneath(items)
+    local left, bottom = window:GetLeft(), window:GetBottom()
+    local own, theirs = window:GetEffectiveScale(), items:GetEffectiveScale()
+    if not (left and bottom and own and theirs and theirs > 0) then return end
+    return left * own / theirs + ITEMS_X, bottom * own / theirs + ITEMS_Y
+end
+
 local function Dock(items)
     if not (window and Has(items, "SetPoint") and Has(items, "ClearAllPoints")) then return end
     if InCombatLockdown() and Has(items, "IsProtected") and items:IsProtected() then return end
@@ -408,15 +418,21 @@ local function Dock(items)
             if active and docked and docked.frame == self and not docking then Dock(self) end
         end)
     end
-    local point, relative, relativePoint, x, y = items:GetPoint(1)
-    if point == "TOPLEFT" and relative == window and relativePoint == "BOTTOMLEFT" and x == ITEMS_X and y == ITEMS_Y
-            and items:GetPoint(2) == nil then
+    local x, y = Beneath(items)
+    if not x then return end
+    local point, relative, relativePoint, atX, atY = items:GetPoint(1)
+    if point == "TOPLEFT" and relative == UIParent and relativePoint == "BOTTOMLEFT" and atX and atY
+            and math.abs(atX - x) < ITEMS_SLACK and math.abs(atY - y) < ITEMS_SLACK and items:GetPoint(2) == nil then
         return
     end
     docking = true
     items:ClearAllPoints()
-    items:SetPoint("TOPLEFT", window, "BOTTOMLEFT", ITEMS_X, ITEMS_Y)
+    items:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
     docking = false
+end
+
+local function Follow()
+    if docked then Dock(docked.frame) end
 end
 
 local function Undock()
@@ -454,11 +470,15 @@ end
 local function Draggable(frame)
     frame:RegisterForDrag(DRAG_BUTTON)
     frame:SetScript("OnDragStart", function()
-        if not ns.RXPWindowOption("rxpWindowLock") then window:StartMoving() end
+        if ns.RXPWindowOption("rxpWindowLock") then return end
+        window:StartMoving()
+        window:SetScript("OnUpdate", Follow)
     end)
     frame:SetScript("OnDragStop", function()
         window:StopMovingOrSizing()
+        window:SetScript("OnUpdate", nil)
         Save(window)
+        Follow()
     end)
 end
 
@@ -1079,11 +1099,6 @@ function Draw()
     if not sizing then Skin() end
     window = window or Build()
     window:RegisterEvent(REGEN_EVENT)
-    if not sizing then
-        local items = Dig(_G.RXP, ITEMS_NAME)
-        Dock(items)
-        ns.RXPItemsDrag(items)
-    end
     local model = sizing and sizingModel or ns.RXPWindowRead() or ns.RXPWindowNoGuide()
     if not sizing and retake then retake = not Take() end
     if not sizing and (model.guide ~= anchorGuide or model.after ~= anchorAfter) then
@@ -1105,6 +1120,11 @@ function Draw()
     DrawChrome(y, listH, folded, listed)
     local guide = Dig(_G.RXPV2GuideWindow, "frame")
     window:SetShown(not guide or guide:IsShown())
+    if not sizing then
+        local items = Dig(_G.RXP, ITEMS_NAME)
+        Dock(items)
+        ns.RXPItemsDrag(items)
+    end
 end
 
 -- a player who turned the window on and sees none is told why, once for each reason
