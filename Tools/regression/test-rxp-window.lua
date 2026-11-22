@@ -272,14 +272,17 @@ local function Rxp(w, opts)
         locale = { Get = function(text) return text end },
         RXPFrame = { activeSteps = { active, tipOnly, idle }, DropDownMenu = function() w.menus = w.menus + 1 end },
         v2 = { snapshots = 0 },
-        ui = { v2 = {} },
         SetStep = function() end,
     }
-    if not opts.noUi then
-        function rxp.ui.v2:GetTexture(name) return "Interface/AddOns/RXPGuides/Textures/v2/" .. name end
+    w.themeLogo = "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo"
+    if not opts.noTheme then
+        function rxp.v2:GetTheme()
+            if opts.themeRaises then error("theme") end
+            if opts.themeBare then return {} end
+            if opts.themeNoLogo then return { guideWindow = {} } end
+            return { guideWindow = { logo = opts.logo ~= nil and opts.logo or w.themeLogo } }
+        end
     end
-    if opts.uiRaises then rxp.ui.v2.GetTexture = function() error("texture") end end
-    if opts.uiPath ~= nil then rxp.ui.v2.GetTexture = function() return opts.uiPath end end
     rxp.settings = { profile = { hideCompletedSteps = false, showUnusedGuides = false } }
     function rxp.settings:SetHideCompletedSteps(value)
         self.profile.hideCompletedSteps = value
@@ -772,28 +775,45 @@ do
     Check(plain.dragFor == nil, "with the window off nothing is wired")
 end
 
--- the logo is the icon RestedXP's own V2 window has, drawn smooth as it draws it
+-- the logo is the one of RestedXP's active theme, as its own V2 window has it, drawn smooth as it draws it
 do
     local function Logo(opts)
         local w = Start({ rxpWindow = true }, opts)
         local box
         for _, o in ipairs(w.frames) do
-            if o.label and o.logo then box = o end
+            if o.label and o.logo and Seen(o) then box = o end
         end
         return box.logo, w
     end
-    local logo = Logo()
-    Check(logo.texture == "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo" and logo.filter == "TRILINEAR",
-        "the logo is the icon of RestedXP's V2 window, with its smooth filter")
-    logo = Logo({ noUi = true })
-    Check(logo.texture:find("rxp_logo-64", 1, true) and logo.filter == "TRILINEAR",
-        "a RestedXP that has no path for it: its older logo")
-    local w
-    logo, w = Logo({ uiRaises = true })
-    Check(logo.texture:find("rxp_logo-64", 1, true) and #w.reported == 1 and w.reported[1]:find("texture", 1, true),
-        "one that raises: the older logo, and it is reported and not raised")
-    Check(Logo({ uiPath = "" }).texture:find("rxp_logo-64", 1, true) and Logo({ uiPath = 5 }).texture:find("rxp_logo-64", 1, true),
-        "and one that gives no path, or no text: the older logo")
+    local V2 = "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo"
+    local logo, w = Logo()
+    Check(logo.texture == V2 and logo.filter == "TRILINEAR", "the logo is the theme's, with its smooth filter")
+    -- a theme picked later has its own: the next draw, and the picture is not set again while it is the same
+    local sets, set = 0, logo.SetTexture
+    logo.SetTexture = function(self, ...)
+        sets = sets + 1
+        return set(self, ...)
+    end
+    w.themeLogo = "Interface/AddOns/RXPGuides/Textures/Hardcore/rxp_logo-64"
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    Check(logo.texture == w.themeLogo and sets == 1 and logo.filter == "TRILINEAR", "another theme: its logo at the next draw")
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    Check(sets == 1, "and it is not set again while it is the same")
+    -- what RestedXP does not give: its older logo
+    local function Older(opts, label)
+        local picture, world = Logo(opts)
+        Check(picture.texture:find("rxp_logo-64", 1, true) and picture.filter == "TRILINEAR", label)
+        return world
+    end
+    Older({ noTheme = true }, "a RestedXP that has no theme call: its older logo")
+    Older({ themeBare = true }, "a theme with no window part: the older")
+    Older({ themeNoLogo = true }, "a window part with no logo: the older")
+    Older({ logo = "" }, "a logo that is empty: the older")
+    Older({ logo = 5 }, "and one that is not text")
+    local raised = Older({ themeRaises = true }, "a theme that raises: the older logo")
+    Check(#raised.reported == 1 and raised.reported[1]:find("theme", 1, true), "and it is reported and not raised")
 end
 
 -- the menu is RestedXP's own with the three switches of its V2 settings menu after its guides

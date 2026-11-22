@@ -236,10 +236,11 @@ Core/Integrations/RestedXP/
   thing counted twice beside the guide's. The box's own opacity is a setting (`rxpWindowBoxOpacity`) and
   not a part of its color. The bars are in the Naowh Gradient to start (`GRADIENT`, which is `ns.MEDIA`'s,
   so a texture of SharedMedia is only needed when another is wanted).
-- RestedXP's logo is the icon its own V2 window has in its header (`Textures/v2/rxp-icon-logo`, got from its
-  `ui.v2:GetTexture` so that a rename of the file does not show here; its older `Textures/rxp_logo-64` when it has
-  no such call), drawn from RestedXP's files with the smooth filter (`TRILINEAR`) it draws it with, in the top
-  right corner of the current step's box (the first, when there are more), untinted, at a fixed size
+- RestedXP's logo is the one its own V2 window has in its header, the active theme's (`v2:GetTheme().guideWindow.logo`:
+  the new icon `Textures/v2/rxp-icon-logo` for its default theme, its older `rxp_logo-64` for the themes made from
+  the old ones, as Naowh's are; the older one when RestedXP gives none), read again at each draw so that a theme
+  picked later has its own, and drawn from RestedXP's files with the smooth filter (`TRILINEAR`) it draws it with,
+  in the top right corner of the current step's box (the first, when there are more), untinted, at a fixed size
   (`LOGO_SIZE`). It is a texture of the
   box, so it is above the box's background, and the rows start below it, or below the label when it is
   smaller. The window hides RestedXP's own and so would otherwise show nothing of it anywhere.

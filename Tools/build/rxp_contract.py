@@ -73,8 +73,8 @@ CONTRACT = [
     ("frames", ".placeholder (a target button's picture)", r"\.placeholder\b"),
     # the arrow and the themes
     ("theme", "RXPGuides_Themes", r"RXPGuides_Themes"),
-    ("theme", "ui.v2:GetTexture (the path of its V2 pictures)", r"function addon\.ui\.v2[:.]GetTexture"),
-    ("theme", "rxp-icon-logo (the icon of its V2 window)", r"rxp-icon-logo"),
+    ("theme", "v2:GetTheme (the active theme, with the logo of its window)", r"function addon\.v2[:.]GetTheme"),
+    ("theme", "guideWindow.logo (the logo of its V2 window)", r"theme\.guideWindow\.logo"),
     ("theme", "RegisterTheme", r"function addon[:.]RegisterTheme"),
     ("theme", "ReloadTheme", r"function addon[:.]ReloadTheme"),
     ("theme", "RXPG_ARROW", r"RXPG_ARROW"),
