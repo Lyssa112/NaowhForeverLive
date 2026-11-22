@@ -21,6 +21,7 @@ local BAG_EVENT = "BAG_UPDATE_DELAYED"
 local SHADOW, SHADOW_ALPHA = 1, 0.9
 local TEXT_FOLD, TEXT_UNFOLD, TEXT_DOT = "-", "+", " \194\183 "
 local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
+local LOGO_FILTER = "TRILINEAR"
 local GRADIENT = ns.MEDIA .. "NaowhGradient.tga"
 local GRIP_UP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up"
 local GRIP_DOWN = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down"
@@ -680,7 +681,7 @@ local function MakeBox()
     box.edge = ns.Border(box)
     box.label = Text(box, "rxpWindowTextSize")
     box.logo = box:CreateTexture(nil, "OVERLAY")
-    box.logo:SetTexture(LOGO)
+    box.logo:SetTexture(LOGO, nil, nil, LOGO_FILTER)
     return box
 end
 

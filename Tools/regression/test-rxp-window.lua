@@ -46,7 +46,7 @@ local function Object(everything)
     end
     function o:SetTextColor(r, g, b) self.color = { r, g, b } end
     function o:SetColorTexture(r, g, b, a) self.solid = { r, g, b, a } end
-    function o:SetTexture(path) self.texture = path end
+    function o:SetTexture(path, _, _, filter) self.texture, self.filter = path, filter end
     function o:RegisterForClicks(...) self.clicksFor = { ... } end
     function o:RegisterEvent(event)
         self.events = self.events or {}
@@ -535,6 +535,17 @@ do
     Check(w.settingsMenus == 1 and w.menus == 0, "a right click opens RestedXP's settings menu")
     f.scripts.OnMouseUp(f, "LeftButton")
     Check(w.settingsMenus == 1, "a left click does not")
+end
+
+-- the logo is drawn smooth, as RestedXP draws its own from 4.11.38
+do
+    local w = Start({ rxpWindow = true })
+    local box
+    for _, o in ipairs(w.frames) do
+        if o.label and o.logo then box = o end
+    end
+    Check(box.logo.texture:find("rxp_logo", 1, true) and box.logo.filter == "TRILINEAR",
+        "the logo has RestedXP's own picture and its smooth filter")
 end
 
 -- the menu is RestedXP's own with the three switches of its V2 settings menu after its guides
