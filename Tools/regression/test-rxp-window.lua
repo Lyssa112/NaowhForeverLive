@@ -10,6 +10,7 @@ local featuresSource = Read("Core/Features.lua")
 local themesSource = Read("Core/Integrations/RestedXP/Themes.lua")
 local settingsSource = Read("Core/Integrations/RestedXP/WindowSettings.lua")
 local modelSource = Read("Core/Integrations/RestedXP/WindowModel.lua")
+local menuSource = Read("Core/Integrations/RestedXP/WindowMenu.lua")
 local windowSource = Read("Core/Integrations/RestedXP/Window.lua")
 local iconsSource = Read("Core/Integrations/RestedXP/Icons.lua")
 
@@ -108,7 +109,7 @@ end
 -- The game, RestedXP's pieces and our window; each call builds a fresh one.
 local function World(account, opts)
     opts = opts or {}
-    local w = { everything = {}, timers = {}, frames = {}, menus = 0, picks = 0, links = {} }
+    local w = { everything = {}, timers = {}, frames = {}, menus = 0, picks = 0, settingsMenus = 0, links = {} }
     local env = { hooked = {} }
     env._G = env
     env.UIParent = Object(w.everything)
@@ -198,7 +199,7 @@ local function World(account, opts)
         ForeverAtlas = function() return false end } }
     ns.AddonFontPath = function(classic) return classic and "Fonts\\Forever.ttf" or "Fonts\\Naowh.ttf" end
     for _, part in ipairs({ { themesSource, "Themes" }, { settingsSource, "WindowSettings" },
-            { modelSource, "WindowModel" }, { windowSource, "Window" } }) do
+            { modelSource, "WindowModel" }, { menuSource, "WindowMenu" }, { windowSource, "Window" } }) do
         local chunk = assert(loadstring(part[1], part[2]))
         setfenv(chunk, env)
         chunk("NaowhForever")
@@ -250,6 +251,30 @@ local function Rxp(w, opts)
         v2 = { snapshots = 0 },
         SetStep = function() end,
     }
+    rxp.settings = { profile = { hideCompletedSteps = false, showUnusedGuides = false } }
+    function rxp.settings:SetHideCompletedSteps(value)
+        self.profile.hideCompletedSteps = value
+        w.hides = (w.hides or 0) + 1
+    end
+    function rxp.RXPFrame:GenerateMenuTable(menu)
+        if opts.menuRaises then error("menu table") end
+        local list = menu or {}
+        list[#list + 1] = { text = "Available Guides", isTitle = 1 }
+        list[#list + 1] = { text = "1-6 Durotar" }
+        list[#list + 1] = { text = "", notCheckable = 1, isTitle = 1 }
+        list[#list + 1] = { text = "Options..." }
+        list[#list + 1] = { text = "Import guide" }
+        list[#list + 1] = { text = "", notCheckable = 1, isTitle = 1 }
+        list[#list + 1] = { text = "Close" }
+        return list
+    end
+    if not opts.legacyMenu then
+        function rxp:ShowMenu(menu)
+            if opts.showRaises then error("show menu") end
+            w.settingsMenus = w.settingsMenus + 1
+            w.menu = menu
+        end
+    end
     function rxp.GetGuideProgress() return 36, "id" end
     function rxp.GetGuideName(guide) return guide.name end
     rxp.v2[opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled"] = function() return opts.v2 ~= false end
@@ -499,9 +524,144 @@ do
     Check(g.points[1][1] == "TOPLEFT" and g.points[1][4] == 300 and g.points[1][5] == -100,
         "and it comes back there")
     f.scripts.OnMouseUp(f, "RightButton")
-    Check(w.menus == 1, "a right click opens RestedXP's own menu")
+    Check(w.settingsMenus == 1 and w.menus == 0, "a right click opens RestedXP's settings menu")
     f.scripts.OnMouseUp(f, "LeftButton")
-    Check(w.menus == 1, "a left click does not")
+    Check(w.settingsMenus == 1, "a left click does not")
+end
+
+-- the menu is RestedXP's own with the three switches of its V2 settings menu after its guides
+do
+    local account = { rxpWindow = true }
+    local w = Start(account)
+    local f, rxp = Window(w), w.rxp
+    f.scripts.OnMouseUp(f, "RightButton")
+    local menu = w.menu
+    Check(menu ~= nil and w.settingsMenus == 1 and w.menus == 0, "a right click opens the settings menu, and not the older one")
+    Check(#menu == 11 and menu[1].text == "Available Guides" and menu[2].text == "1-6 Durotar" and menu[3].text == ""
+        and menu[3].isTitle == 1, "RestedXP's list of guides is first, to pick another")
+    Check(menu[4].text == "Show step list" and menu[5].text == "Hide completed steps"
+        and menu[6].text == "Show unused guides" and menu[7].isTitle == 1 and menu[7].text == "",
+        "then the three switches RestedXP's V2 menu has, with a rule after them")
+    Check(menu[8].text == "Options..." and menu[9].text == "Import guide" and menu[10].text == "" and menu[11].text == "Close",
+        "and then the rest of its menu, its other rules where they were")
+    local this = { Hide = function(self) self.hidden = true end }
+    local expanded = f.height
+    local function Counts()
+        local lines, boxes = 0, 0
+        for _, o in ipairs(w.everything) do
+            if Seen(o) and o.text and o.text:find("^%d+  ") then lines = lines + 1 end
+        end
+        for _, o in ipairs(w.frames) do
+            if o.label and o.logo and Seen(o) then boxes = boxes + 1 end
+        end
+        return lines, boxes
+    end
+    local lines, boxes = Counts()
+    Check(menu[4].checked() == true and account.rxpWindowStepsHidden == nil and lines == 6 and boxes == 1,
+        "the step list is shown: checked")
+    menu[4].func(this)
+    lines, boxes = Counts()
+    Check(account.rxpWindowStepsHidden == true and lines == 0 and boxes == 1 and f.height < expanded
+        and menu[4].checked() == false and this.hidden == true,
+        "Show step list unchecked: the steps under the active one go, the active step stays, and the menu closes")
+    Check(account.rxpWindowCollapsed == nil and f.title.shown ~= false, "it is not the fold: the header is as it was")
+    account.rxpWindowSteps = 4
+    Check(f.resizeBounds[2] == f.chrome and f.resizeBounds[4] == f.chrome, "the height is the content's, with no list to size")
+    f.grip.scripts.OnMouseDown(f.grip)
+    f.width, f.height = 500, f.chrome
+    f.grip.scripts.OnMouseUp(f.grip)
+    Check(account.rxpWindowWidth == 500 and account.rxpWindowSteps == 4,
+        "the grip sizes the width, and the number of steps it was is left alone")
+    menu[4].func({})
+    lines, boxes = Counts()
+    Check(account.rxpWindowStepsHidden == nil and lines == 4 and boxes == 1 and menu[4].checked() == true,
+        "and checked it lists them again, as many as it was")
+    account.rxpWindowSteps = nil
+    account.rxpWindowWidth = nil
+    menu[4].func({})
+    local fold = f.fold
+    fold.scripts.OnClick(fold)
+    Check(account.rxpWindowCollapsed == true and account.rxpWindowStepsHidden == true, "the minus is the fold, and keeps what the list was")
+    fold.scripts.OnClick(fold)
+    menu[4].func({})
+    Check(account.rxpWindowCollapsed == nil and account.rxpWindowStepsHidden == nil and Counts() == 6,
+        "and both are given back")
+
+    Check(menu[5].checked() == false, "completed steps are shown: not checked")
+    this.hidden = nil
+    menu[5].func(this)
+    Check(w.hides == 1 and rxp.settings.profile.hideCompletedSteps == true and menu[5].checked() == true and this.hidden == true,
+        "Hide completed steps is RestedXP's setting, set by its own function, and the menu closes")
+    menu[5].func(this)
+    Check(w.hides == 2 and rxp.settings.profile.hideCompletedSteps == false and menu[5].checked() == false,
+        "and turned off by the same")
+    rxp.settings.SetHideCompletedSteps = function() error("hide") end
+    menu[5].func(this)
+    Check(#w.reported == 1 and w.reported[1]:find("hide", 1, true), "a function that raises is reported and not raised")
+    rxp.settings.SetHideCompletedSteps = nil
+
+    this.hidden = nil
+    menu[6].func(this)
+    Check(rxp.settings.profile.showUnusedGuides == true and menu[6].checked() == true and w.hides == 2 and this.hidden == true,
+        "Show unused guides is RestedXP's profile setting, and the menu closes")
+    menu[6].func(this)
+    Check(rxp.settings.profile.showUnusedGuides == false and menu[6].checked() == false, "and off again")
+
+    -- with no guide the line to pick one stays, whatever the list
+    w = Start({ rxpWindow = true, rxpWindowStepsHidden = true })
+    w.rxp.currentGuide = { empty = true, steps = {} }
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    local picks = 0
+    for _, o in ipairs(w.everything) do
+        if o.text == "Pick a guide" and Seen(o) then picks = picks + 1 end
+    end
+    Check(picks == 1, "with no guide the line to pick one stays, the list being hidden")
+
+    -- in RestedXP's language, and in English with none
+    w = Start({ rxpWindow = true })
+    f = Window(w)
+    w.rxp.locale.Get = function(text) return "<" .. text .. ">" end
+    f.scripts.OnMouseUp(f, "RightButton")
+    Check(w.menu[4].text == "<Show step list>" and w.menu[5].text == "<Hide completed steps>"
+        and w.menu[6].text == "<Show unused guides>", "the switches are in RestedXP's language")
+    w.rxp.locale = nil
+    f.scripts.OnMouseUp(f, "RightButton")
+    Check(w.menu[4].text == "Show step list" and w.menu[6].text == "Show unused guides", "and in English with none")
+
+    -- a menu with no rule in it: the switches come first
+    w = Start({ rxpWindow = true })
+    f = Window(w)
+    w.rxp.RXPFrame.GenerateMenuTable = function(_, list)
+        list[#list + 1] = { text = "Close" }
+        return list
+    end
+    f.scripts.OnMouseUp(f, "RightButton")
+    Check(#w.menu == 5 and w.menu[1].text == "Show step list" and w.menu[4].isTitle == 1 and w.menu[5].text == "Close",
+        "a menu with no rule in it: the switches first, then it")
+
+    -- RestedXP without the pieces of that menu: its older menu, as before
+    local function Older(label, opts, change)
+        local o = Start({ rxpWindow = true }, opts)
+        local g = Window(o)
+        if change then change(o.rxp) end
+        g.scripts.OnMouseUp(g, "RightButton")
+        Check(o.menus == 1 and o.settingsMenus == 0 and #o.reported == (opts and opts.menuRaises and 1 or 0), label)
+        return o
+    end
+    Older("no ShowMenu: a right click opens its older menu", { legacyMenu = true })
+    Older("no function to hide completed steps: its older menu", nil, function(r) r.settings.SetHideCompletedSteps = nil end)
+    Older("no profile: its older menu", nil, function(r) r.settings.profile = nil end)
+    Older("no settings: its older menu", nil, function(r) r.settings = nil end)
+    Older("no table of its menu: its older menu", nil, function(r) r.RXPFrame.GenerateMenuTable = nil end)
+    Older("a table that is nothing: its older menu", nil, function(r) r.RXPFrame.GenerateMenuTable = function() end end)
+    local raised = Older("a table that raises: its older menu", { menuRaises = true })
+    Check(#raised.reported == 1 and raised.reported[1]:find("menu table", 1, true), "and the raise is reported, not raised")
+    local shown = Start({ rxpWindow = true }, { showRaises = true })
+    local g = Window(shown)
+    g.scripts.OnMouseUp(g, "RightButton")
+    Check(shown.menus == 0 and #shown.reported == 1 and shown.reported[1]:find("show menu", 1, true),
+        "a menu that raises on show is reported, not raised, and nothing else opens")
 end
 
 -- the size: the window scales as a whole and stays in the same place on the screen
@@ -588,11 +748,11 @@ do
         return false
     end
     Check(RegistersRight(row) and RegistersRight(box), "a row and the box are given the right click")
-    local menus = w.menus
+    local menus = w.settingsMenus
     row.scripts.OnClick(row, "RightButton")
     box.scripts.OnClick(box, "RightButton")
     sub.scripts.OnClick(sub, "RightButton")
-    Check(w.menus == menus + 3 and #went == 4, "a right click on a row or the box is the menu, and no skip")
+    Check(w.settingsMenus == menus + 3 and #went == 4, "a right click on a row or the box is the menu, and no skip")
 
     local hits = {}
     for _, o in ipairs(w.frames) do
@@ -616,7 +776,7 @@ do
     Check(hits[1].scripts.OnDragStart ~= nil, "a line is still where the window is dragged from")
     Check(not RegistersRight(hits[1]), "and a line of the list is not: the menu is of the current step")
     hits[1].scripts.OnClick(hits[1], "RightButton")
-    Check(w.menus == menus + 3 and #went == 5, "a right click on a line is no menu, and no step")
+    Check(w.settingsMenus == menus + 3 and #went == 5, "a right click on a line is no menu, and no step")
 
     -- how it is done is a setting
     ns.SetRXPWindowOption("rxpWindowSkip", "click")

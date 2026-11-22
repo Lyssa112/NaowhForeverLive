@@ -176,8 +176,26 @@ local function Place(frame)
     frame:SetPoint(point, UIParent, relativePoint, x, y)
 end
 
-local function Menu()
+local function LegacyMenu()
     Run("WindowMenu", _G.RXP.RXPFrame.DropDownMenu)
+end
+
+local function StepsShown()
+    return Settings().rxpWindowStepsHidden ~= true
+end
+
+local function ToggleSteps()
+    Settings().rxpWindowStepsHidden = StepsShown() or nil
+    Draw()
+end
+
+local function ToggleFold()
+    Settings().rxpWindowCollapsed = Settings().rxpWindowCollapsed ~= true or nil
+    Draw()
+end
+
+local function Menu()
+    if not ns.RXPWindowMenu(StepsShown, ToggleSteps) then LegacyMenu() end
 end
 
 local function PickGuide()
@@ -185,7 +203,7 @@ local function PickGuide()
     if v2.ShowGuideSelectionMenu then
         Run("WindowPick", v2.ShowGuideSelectionMenu, v2)
     else
-        Menu()
+        LegacyMenu()
     end
 end
 
@@ -433,7 +451,7 @@ end
 local function Resized()
     if not window then return end
     ns.SetRXPWindowWidth(window:GetWidth())
-    ns.SetRXPWindowSteps(StepsFor(window:GetHeight()))
+    if StepsShown() then ns.SetRXPWindowSteps(StepsFor(window:GetHeight())) end
     Save(window)
     Draw()
 end
@@ -545,11 +563,7 @@ local function Build()
     f.fold.text:SetAllPoints()
     f.fold.sign = f.fold:CreateTexture(nil, "OVERLAY")
     f.fold.sign:SetPoint("CENTER")
-    f.fold:SetScript("OnClick", function()
-        local on = Settings().rxpWindowCollapsed ~= true
-        Settings().rxpWindowCollapsed = on or nil
-        Draw()
-    end)
+    f.fold:SetScript("OnClick", ToggleFold)
     f.title = Text(f, "rxpWindowTitleSize")
     f.title:SetWordWrap(false)
     f.subtitle = Text(f, "rxpWindowTextSize")
@@ -936,20 +950,21 @@ local function DrawSteps(model, y, inner, listH)
     return y
 end
 
-local function DrawList(model, y, inner, listH)
+local function DrawList(model, y, inner, listH, listed)
     if model.empty then y = ListLine(y, inner, listH, TEXT_PICK, nil, true) end
     for i, step in ipairs(model.steps) do y = DrawBox(step, y, inner, i == 1) end
+    if not listed then return y end
     return DrawSteps(model, y, inner, listH)
 end
 
-local function DrawChrome(y, listH, folded)
+local function DrawChrome(y, listH, folded, listed)
     if not sizing then window:SetHeight(-y + PAD) end
     if wantsBags then window:RegisterEvent(BAG_EVENT) else window:UnregisterEvent(BAG_EVENT) end
     window.lineHeight = listH
     window.chrome = -y + PAD - used.line * listH
     local locked = ns.RXPWindowOption("rxpWindowLock")
     window:SetResizable(not locked and not folded)
-    window:SetResizeBounds(WIDTH_MIN, window.chrome, WIDTH_MAX, window.chrome + STEPS_MAX * listH)
+    window:SetResizeBounds(WIDTH_MIN, window.chrome, WIDTH_MAX, window.chrome + (listed and STEPS_MAX * listH or 0))
     window.grip:SetShown(not folded and not locked)
 end
 
@@ -966,7 +981,7 @@ function Draw()
     Reset()
     Refaced()
     local width = sizing and sizing.width or ns.RXPWindowWidth()
-    local folded = Settings().rxpWindowCollapsed == true
+    local folded, listed = Settings().rxpWindowCollapsed == true, StepsShown()
     local headH = ns.RXPWindowOption("rxpWindowTitleSize") + HEAD_PAD
     local listH = ns.RXPWindowOption("rxpWindowListSize") + LIST_PAD
     if not sizing then window:SetWidth(width) end
@@ -975,8 +990,8 @@ function Draw()
     window.track:Hide()
     window.thumb:Hide()
     window.wheel:Hide()
-    if not folded then y = DrawList(model, y, width - PAD * 2, listH) end
-    DrawChrome(y, listH, folded)
+    if not folded then y = DrawList(model, y, width - PAD * 2, listH, listed) end
+    DrawChrome(y, listH, folded, listed)
     local guide = Dig(_G.RXPV2GuideWindow, "frame")
     window:SetShown(not guide or guide:IsShown())
 end

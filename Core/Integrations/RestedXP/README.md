@@ -16,6 +16,7 @@ Core/Integrations/RestedXP/
   Themes.lua     the themes, the settings behind the RESTEDXP card, and the hooks
   WindowSettings.lua  what the window can be changed in: its options, colors and theme
   WindowModel.lua     what RestedXP shows, read as plain data for the window to draw
+  WindowMenu.lua      the window's menu: RestedXP's menu with the switches of its V2 settings menu in it
   Window.lua     the Naowh guide window: its frames, drawing, clicks and the look of the two small windows
   Icons.lua      Naowh's step icons, put in RestedXP's icon table as it loads
   Waypoint.lua   optional current guide destination feed for the world pin, routed by Journeys when on
@@ -134,7 +135,7 @@ Core/Integrations/RestedXP/
   it, the active step in a box (the only thing with a background), and the steps after it as plain
   shadowed lines over the world, so every text carries a shadow (`SHADOW`) to be read on any ground.
   The lines after the active step are plain text (`Plain`: no icons, colors or links), as the active
-  step's rows are what carries them. RestedXP's menu is a right click, on the window and on a row and the
+  step's rows are what carries them. RestedXP's settings menu is a right click, on the window and on a row and the
   box of the current step too (they take the mouse, so each is given the right button), and not on a
   line of the list: those are for going to a step. A button for it was taken out as it was the same menu,
   and the tooltip of the first line says where it is. A locked window has no grip.
@@ -168,9 +169,10 @@ Core/Integrations/RestedXP/
   With the switch off RestedXP's own font (`RXP.font`) is given back. The
   window uses `ns.AddonFontPath`, which is read live, and not `ns.UIFontPath`, which keeps the first
   path it found.
-- The window is three files in load order, each one job: `WindowSettings.lua` (what can be changed, read
+- The window is four files in load order, each one job: `WindowSettings.lua` (what can be changed, read
   live by the others; it tells the window to draw again through `ns.RXPWindowRefresh`, which the window
-  defines), `WindowModel.lua` (reads RestedXP and returns tables; draws nothing) and `Window.lua` (frames).
+  defines), `WindowModel.lua` (reads RestedXP and returns tables; draws nothing), `WindowMenu.lua` (the
+  menu) and `Window.lua` (frames).
   What each reads of the others is a function on `ns`, never a file-level local. `Run`, which returns
   what a call into RestedXP returned and reports what raised, is shared through `ns.RXPSafe` with `Has`
   and `Dig`.
@@ -233,10 +235,25 @@ Core/Integrations/RestedXP/
   where it is. On a line of the list it goes to that line's step. Both need Shift by default (Skipping
   Steps), as a plain click is also where a window is grabbed to be moved and a step skipped by it is not
   given back; Click and Off are the other two. The tooltip is the box's wherever the mouse is in the step,
-  and Show Tooltips turns it off. A right click is RestedXP's menu on the window and on a step, and not on
+  and Show Tooltips turns it off. A right click is RestedXP's settings menu on the window and on a step, and not on
   a line of the list, those being for going to a step. The list's lines are a transparent button each
   (pooled as `hit`) over the text, so they are also where the window is dragged from, and with Off they
   are not lit.
+- The right click is RestedXP's menu (the list of guides, its options) with the switches of its V2 settings menu
+  between the two: Show step list, Hide completed steps and Show unused guides, a rule on each side (after the
+  rule that ends the guides, or first when there is none). RestedXP's V2 window keeps
+  the guides on a button of their own and the switches in a settings menu, and this window has neither button,
+  so one menu has both, and a guide is picked from it. It is made in `WindowMenu.lua` from RestedXP's own pieces
+  (`GenerateMenuTable`, `ShowMenu`, `settings:SetHideCompletedSteps`) and `v2:ShowSettingsMenu` is not called,
+  as its first switch is RestedXP's own step list (the height of its window, which the Naowh window takes), and
+  that would do nothing to ours: Show step list is the window's own setting (`rxpWindowStepsHidden`) for its list,
+  as RestedXP's is for its list under the header: the steps under the active ones go, and the header and the
+  active steps' boxes stay. It is not the minus, the fold, which takes everything but the header and is kept
+  apart. With the list hidden the height is the content's, and the grip sizes the width only and leaves the
+  number of steps it was alone. Hide completed steps is RestedXP's setting, set by its own function, so the steps after the active one follow it
+  through the list RestedXP builds; Show unused guides is its profile switch for the list of guides, which is
+  in this menu and in Pick a guide. A switch is its menu's, so the words are RestedXP's (`locale.Get`). With
+  none of those pieces (an older RestedXP) a right click is its older menu, as before.
 - A row that counts has a bar under its text: a buy by the items in the bags against `qty` (RestedXP shows
   no counter for it, so `C_Item.GetItemCount(id)` is read, and the window listens to `BAG_UPDATE_DELAYED` only
   while such a row is drawn), and any other row by the `3/8` in its text, which RestedXP rewrites as the
