@@ -306,7 +306,8 @@ local function Rxp(w, opts)
     end
     function rxp.GetGuideProgress() return 36, "id" end
     function rxp.GetGuideName(guide) return guide.name end
-    rxp.v2[opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled"] = function() return opts.v2 ~= false end
+    local switch = opts.v2Switch or (opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled")
+    rxp.v2[switch] = function() return opts.v2 ~= false end
     function rxp.v2:BuildGuideStepsSnapshot()
         self.snapshots = self.snapshots + 1
         if opts.snapshotRaises then error("snapshot") end
@@ -566,7 +567,7 @@ do
     w.ns.RXPWindowStart()
     w.ns.SetRXPWindow(true)
     Check(#w.printed == 1, "and told once")
-    w.rxp.v2.IsGuideWindowEnabled = nil
+    w.rxp.v2.IsEnabled = nil
     w.ns.RXPWindowStart()
     Check(#w.printed == 2 and w.printed[2]:find("changed the interface", 1, true),
         "the switch gone under every name we know: told that RestedXP changed, which is the other reason")
@@ -1745,6 +1746,23 @@ do
         "RestedXP's V2 interface off: no window, and RestedXP's own is left alone")
     w = Start({ rxpWindow = true }, { oldV2 = true })
     Check(w.ns.RXPWindowReady() == true and Window(w) ~= nil, "RestedXP before 4.11.38 (IsGuideWindowEnabled): ready")
+    w = Start({ rxpWindow = true }, { oldV2 = true, v2 = false })
+    Check(Window(w) == nil and w.ns.RXPWindowReady() == false and w.guide.frame.alpha == nil,
+        "and off under it: no window, and RestedXP's own is left alone")
+    w = Start({ rxpWindow = true })
+    w.rxp.v2.IsGuideWindowEnabled = function() return true end
+    w.rxp.v2.IsEnabled = function() return false end
+    Check(w.ns.RXPWindowReady() == false, "both names: the newer one is the one asked")
+    w.rxp.v2.IsGuideWindowEnabled = function() return false end
+    w.rxp.v2.IsEnabled = function() return true end
+    Check(w.ns.RXPWindowReady() == true, "the newer one on: on, whatever the older one says")
+    w.rxp.v2.IsEnabled = "gone"
+    w.rxp.v2.IsGuideWindowEnabled = function() return true end
+    Check(w.ns.RXPWindowReady() == true, "a name that is not a function is passed over")
+    w.rxp.v2.IsEnabled = nil
+    Check(w.ns.RXPWindowReady() == true, "and the older one when it is the only one")
+    w.rxp.v2.IsGuideWindowEnabled = nil
+    Check(w.ns.RXPWindowReady() == false, "neither name: not ready, and nothing is raised")
     w = Start({ rxpWindow = true })
     w.rxp.currentGuide = { empty = true, steps = {} }
     w.rxp.v2:UpdateGuideWindow()
@@ -2562,6 +2580,42 @@ do
     Check(buttons[1].placeholder.id == 2056011 and buttons[2].placeholder.id == 135274,
         "the window off: RestedXP's placeholders are back")
 
+    -- RestedXP's Active Items window is left where the player puts it, as its Active Targets window is: the window
+    -- gives it its look and no place, and nothing of it hangs from the window
+    local own = Begin({ rxpWindow = true }, Both)
+    local win, held = Window(own), own.rxp.activeItemFrame
+    held:ClearAllPoints()
+    held:SetPoint("CENTER", own.env.UIParent, "CENTER", 10, 20)
+    own.rxp.SetStep()
+    Flush(own)
+    local p = held.points[1]
+    Check(#held.points == 1 and p[1] == "CENTER" and p[2] == own.env.UIParent and p[4] == 10 and p[5] == 20,
+        "the Active Items window stays where it was put, through a redraw")
+    Check(held.savePosition == nil and held.mouse ~= false and held.title.mouse ~= false,
+        "RestedXP still saves its place and it is still moved by hand")
+    own.ns.SetRXPWindow(false)
+    Flush(own)
+    own.ns.SetRXPWindow(true)
+    Flush(own)
+    p = held.points[1]
+    Check(#held.points == 1 and p[1] == "CENTER" and p[4] == 10 and held.savePosition == nil and held.mouse ~= false,
+        "also with the window off and on")
+    held.IsProtected = function() return true end
+    local anchored = false
+    for _, o in ipairs(own.everything) do
+        if o.IsProtected and o:IsProtected() then
+            for _, point in ipairs(o.points or {}) do
+                if point[2] == win then anchored = true end
+            end
+        end
+    end
+    Check(not anchored, "and no frame with buttons hangs from the window: it would block its size in a fight")
+    own.env.InCombatLockdown = function() return true end
+    own.rxp.SetStep()
+    Flush(own)
+    Check(#own.reported == 0 and win.width > 0 and held.points[1][1] == "CENTER",
+        "the window is drawn in a fight, and the Active Items window is not moved")
+
     -- RestedXP 4.11.39: the same two windows are widgets. UpdateTheme restyles the frame, the title is the widget's and not
     -- the frame's, the frame has no UpdateVisuals and the targets no RenderTargetFrameBackground. Hooking what is not
     -- there is an error in the game.
@@ -2676,42 +2730,6 @@ do
     Check(okBare, "a window with neither UpdateTheme nor UpdateVisuals is no error" .. (okBare and "" or " (" .. tostring(errBare) .. ")"))
     Check(okBare and Is(Fill(bare.rxp.targeting.activeTargetFrame), 0.1, 0.2, 0.3, 0.9)
         and bare.rxp.targeting.activeTargetFrame.paints == 1, "and is left as RestedXP made it")
-
-    -- RestedXP's Active Items window is left where the player puts it, as its Active Targets window is: the window
-    -- gives it its look and no place, and nothing of it hangs from the window
-    local own = Begin({ rxpWindow = true }, Both)
-    local win, held = Window(own), own.rxp.activeItemFrame
-    held:ClearAllPoints()
-    held:SetPoint("CENTER", own.env.UIParent, "CENTER", 10, 20)
-    own.rxp.SetStep()
-    Flush(own)
-    local p = held.points[1]
-    Check(#held.points == 1 and p[1] == "CENTER" and p[2] == own.env.UIParent and p[4] == 10 and p[5] == 20,
-        "the Active Items window stays where it was put, through a redraw")
-    Check(held.savePosition == nil and held.mouse ~= false and held.title.mouse ~= false,
-        "RestedXP still saves its place and it is still moved by hand")
-    own.ns.SetRXPWindow(false)
-    Flush(own)
-    own.ns.SetRXPWindow(true)
-    Flush(own)
-    p = held.points[1]
-    Check(#held.points == 1 and p[1] == "CENTER" and p[4] == 10 and held.savePosition == nil and held.mouse ~= false,
-        "also with the window off and on")
-    held.IsProtected = function() return true end
-    local anchored = false
-    for _, o in ipairs(own.everything) do
-        if o.IsProtected and o:IsProtected() then
-            for _, point in ipairs(o.points or {}) do
-                if point[2] == win then anchored = true end
-            end
-        end
-    end
-    Check(not anchored, "and no frame with buttons hangs from the window: it would block its size in a fight")
-    own.env.InCombatLockdown = function() return true end
-    own.rxp.SetStep()
-    Flush(own)
-    Check(#own.reported == 0 and win.width > 0 and held.points[1][1] == "CENTER",
-        "the window is drawn in a fight, and the Active Items window is not moved")
 end
 
 -- the icons of ours are drawn as a texture in the window's accent, as it is now
