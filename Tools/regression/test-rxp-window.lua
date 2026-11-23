@@ -771,6 +771,20 @@ do
     Redraw(off)
     Check(plain.dragFor == nil, "with the window off nothing is wired")
 
+    -- RestedXP 4.11.39 keeps the buttons on the widget of the window (activeItemWindow), where it had a frame
+    local modern = Setup()
+    modern.rxp.activeItemFrame, modern.rxp.activeItemWindow = nil, modern.items
+    local fresh39 = Macro(modern, "Herb Baked Egg", BODY, 132834)
+    Redraw(modern)
+    Check(fresh39.dragFor and fresh39.dragFor[1] == "LeftButton", "4.11.39: a button of the widget can be dragged")
+    local later39 = Button(modern, { spell = true, itemId = 8004 })
+    modern.rxp.UpdateItemFrame()
+    Check(later39.dragFor ~= nil, "4.11.39: and one RestedXP makes as it updates the window")
+    local neither = Setup()
+    neither.rxp.activeItemFrame = nil
+    Redraw(neither)
+    Check(#neither.reported == 0, "RestedXP with no Active Items window: nothing to wire and no error")
+
     -- what a step has is listed the first time it is shown: RestedXP's V2 lists a step's macros, spells and items before it
     -- has made them, so the first time the window is empty
     local s = Setup()

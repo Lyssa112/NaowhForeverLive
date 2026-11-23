@@ -64,6 +64,12 @@ local function Pick(button)
     end
 end
 
+-- the window with the buttons: RestedXP 4.11.39 has it as a widget (activeItemWindow), before it was a frame (activeItemFrame)
+local function Items()
+    local rxp = _G.RXP
+    return Dig(rxp, "activeItemWindow") or Dig(rxp, "activeItemFrame")
+end
+
 local function Wire(items)
     if InCombatLockdown() then return end
     for _, button in ipairs(Dig(items, "buttonList") or {}) do
@@ -104,11 +110,11 @@ local function Sync()
 end
 
 -- the buttons RestedXP has now, and those it makes later as it updates the window
-function ns.RXPItemsStart(items)
+function ns.RXPItemsStart()
     local rxp = _G.RXP
     if not hooked and Has(rxp, "UpdateItemFrame") then
         hooked = true
-        hooksecurefunc(rxp, "UpdateItemFrame", function() Wire(Dig(_G.RXP, "activeItemFrame")) end)
+        hooksecurefunc(rxp, "UpdateItemFrame", function() Wire(Items()) end)
     end
     local v2 = Dig(rxp, "v2")
     if not synced and Has(v2, "UpdateActiveStepsFrame") then
@@ -116,5 +122,5 @@ function ns.RXPItemsStart(items)
         hooksecurefunc(v2, "UpdateActiveStepsFrame", Sync)
     end
     Sync()
-    Wire(items)
+    Wire(Items())
 end

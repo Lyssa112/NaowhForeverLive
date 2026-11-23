@@ -16,6 +16,10 @@ import rxp_contract  # noqa: E402
 
 SWITCH = "the V2 switch (IsEnabled, or IsGuideWindowEnabled before 4.11.38)"
 LINK = "comms.OpenLink (or the RXP_Link popup before it)"
+ITEMS = "the Active Items window (activeItemWindow, or activeItemFrame before 4.11.39)"
+TARGETS = "the Active Targets window (activeTargetWindow, or activeTargetFrame before 4.11.39)"
+RESTYLE = "UpdateTheme of a window (or its UpdateVisuals before 4.11.39)"
+ARROW = "the arrow's redraw (UpdateTheme, or UpdateVisuals before 4.11.39)"
 
 
 def found(source):
@@ -59,6 +63,22 @@ class ContractTest(unittest.TestCase):
         self.assertTrue(found("function addon.comms.OpenLink(url)\nend")[LINK])
         self.assertTrue(found('_G.StaticPopupDialogs["RXP_Link"] = {}')[LINK])
         self.assertFalse(found("function addon.comms.OpenSupport()\nend")[LINK])
+
+    def test_the_windows_are_widgets_or_the_older_frames(self):
+        self.assertTrue(found("self.activeItemWindow = window")[ITEMS])
+        self.assertTrue(found("addon.activeItemFrame = CreateFrame()")[ITEMS])
+        self.assertFalse(found("self.activeItemList = {}")[ITEMS])
+        self.assertTrue(found("self.activeTargetWindow = window")[TARGETS])
+        self.assertTrue(found("targeting.activeTargetFrame = CreateFrame()")[TARGETS])
+        self.assertFalse(found("self.activeTargetCount = 0")[TARGETS])
+        self.assertTrue(found('["UpdateTheme"] = updateTheme')[RESTYLE])
+        self.assertTrue(found("function frame:UpdateVisuals()\nend")[RESTYLE])
+        self.assertFalse(found("function frame:UpdateScale()\nend")[RESTYLE])
+
+    def test_the_arrow_is_redrawn_by_either_name(self):
+        self.assertTrue(found("af.UpdateTheme = addon.ui.v2.UpdateTheme")[ARROW])
+        self.assertTrue(found("function af:UpdateVisuals()\nend")[ARROW])
+        self.assertFalse(found("function af:UpdateSubTheme()\nend")[ARROW])
 
     def test_libraries_translations_and_scripts_are_not_read(self):
         root = self.folder({

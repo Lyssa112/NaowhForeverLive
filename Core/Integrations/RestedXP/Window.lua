@@ -49,7 +49,6 @@ local LINK_POPUP = "RXP_Link"
 local TARGET_PLACEHOLDER, MOB_PLACEHOLDER = 2056011, 135274
 local PLACEHOLDER_GLYPHS = { [TARGET_PLACEHOLDER] = "gossip", [MOB_PLACEHOLDER] = "combat" }
 local OUTLINE_FLAGS = { outline = "OUTLINE", thick = "THICKOUTLINE", slug = "OUTLINE, SLUG" }
-local ITEMS_NAME = "activeItemFrame"
 
 local window, active, started, pending, styled, wantsBags
 local retake = true
@@ -1044,7 +1043,7 @@ function Draw()
     DrawChrome(y, listH, folded, listed)
     local guide = Dig(_G.RXPV2GuideWindow, "frame")
     window:SetShown(not guide or guide:IsShown())
-    if not sizing then ns.RXPItemsStart(Dig(_G.RXP, ITEMS_NAME)) end
+    if not sizing then ns.RXPItemsStart() end
 end
 
 -- a player who turned the window on and sees none is told why, once for each reason

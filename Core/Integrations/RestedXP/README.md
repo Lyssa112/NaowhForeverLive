@@ -124,6 +124,8 @@ Core/Integrations/RestedXP/
   twelve letters of the button's name (so that no macro of the player's is ever written over: one of that name is
   ours, and written again with the button's text each time), with the button's picture. Over 255 letters or with
   all 18 of the character's macros made, it says so and picks nothing up; in a fight nothing is.
+  The buttons are on the widget of the window (`activeItemWindow`) since RestedXP 4.11.39, and were on its frame
+  (`activeItemFrame`) before; `Items` takes the widget where there is one.
 - The list under the active step is the guide's steps as `v2:BuildGuideStepsSnapshot` has them, which
   is what RestedXP's own v2 guide window lists: a step it hides is not listed, and a step done is, a
   little dimmer, so that a step can be gone back to. It starts at the first step after the active one
