@@ -2062,12 +2062,13 @@ do
     local lateMini = Begin({ rxpWindow = true }, function(world, rxp)
         rxp.targeting = { activeTargetWindow = Mini(world, "Active Targets") }
     end)
-    local lr, lg, lb = lateMini.ns.RXPWindowColor("box")
-    Check(Is(Fill(lateMini.rxp.targeting.activeTargetWindow.frame), lr, lg, lb, 0.55), "4.11.39: with one of the two not there yet")
+    local lateR, lateG, lateB = lateMini.ns.RXPWindowColor("box")
+    Check(Is(Fill(lateMini.rxp.targeting.activeTargetWindow.frame), lateR, lateG, lateB, 0.55),
+        "4.11.39: with one of the two not there yet")
     lateMini.rxp.activeItemWindow = Mini(lateMini, "Active Items")
     lateMini.rxp.SetStep()
     Flush(lateMini)
-    Check(Is(Fill(lateMini.rxp.activeItemWindow.frame), lr, lg, lb, 0.55),
+    Check(Is(Fill(lateMini.rxp.activeItemWindow.frame), lateR, lateG, lateB, 0.55),
         "4.11.39: one RestedXP makes later has the look at the next draw")
 
     -- a window as it was and the widget of the new one: the widget is the one that is followed

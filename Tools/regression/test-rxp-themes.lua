@@ -1103,8 +1103,8 @@ do
         end
         return names
     end
-    local function Renamed(account, shape)
-        local e, f, b = Start(account, "NaowhForever:rosenoir")
+    local function Renamed(saveData, shape)
+        local e, f, b = Start(saveData, "NaowhForever:rosenoir")
         Strict(e)
         shape(e.RXPG_ARROW)
         local ok, err = pcall(Login, b)

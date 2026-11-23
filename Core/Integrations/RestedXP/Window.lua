@@ -280,9 +280,9 @@ end
 -- RestedXP's windows as a table of its frame, its title and what restyles them. Since 4.11.39 they are widgets
 -- (targeting.activeTargetWindow, activeItemWindow) that restyle with UpdateTheme and keep the title; before, they were
 -- frames (activeTargetFrame, activeItemFrame) that restyled with UpdateVisuals and had the title on them.
-local function SkinPart(window, frame)
-    if Has(window, "UpdateTheme") and type(window.frame) == "table" then
-        return { frame = window.frame, title = window.title, owner = window, restyle = "UpdateTheme" }
+local function SkinPart(widget, frame)
+    if Has(widget, "UpdateTheme") and type(widget.frame) == "table" then
+        return { frame = widget.frame, title = widget.title, owner = widget, restyle = "UpdateTheme" }
     elseif Has(frame, "UpdateVisuals") then
         return { frame = frame, title = frame.title, owner = frame, restyle = "UpdateVisuals" }
     end
