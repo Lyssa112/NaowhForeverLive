@@ -48,6 +48,13 @@ local function Object(everything)
     function o:SetColorTexture(r, g, b, a) self.solid = { r, g, b, a } end
     function o:SetTexture(path) self.texture = path end
     function o:RegisterForClicks(...) self.clicksFor = { ... } end
+    function o:GetTexture() return self.texture end
+    function o:RegisterForDrag(...) self.dragFor = { ... } end
+    function o:SetAttribute(key, value)
+        self.attrs = self.attrs or {}
+        self.attrs[key] = value
+    end
+    function o:GetAttribute(key) return self.attrs and self.attrs[key] end
     function o:RegisterEvent(event)
         self.events = self.events or {}
         self.events[event] = true
@@ -183,6 +190,8 @@ local function World(account, opts)
     end
     ns.UI = { FontPath = function(name) return "Fonts\\" .. name .. ".ttf" end,
         TexturePath = function(name) return "Textures\\" .. name end }
+    w.printed = {}
+    ns.Print = function(msg) w.printed[#w.printed + 1] = msg end
     ns.Hairline = function() end
     ns.OnePixel = function() return 1 end
     ns.Shared = { Style = { FOREVER_FIELD_RGB = { r = 0, g = 0, b = 0 } }, Parts = {
@@ -1200,6 +1209,226 @@ do
     ns.SetRXPWindowTheme("")
 end
 
+-- the buttons of RestedXP's Active Items window can be dragged onto an action bar, with Shift held
+do
+    local function Setup(account)
+        local w = Start(account or { rxpWindow = true })
+        local env = w.env
+        w.calls, w.slots, w.charMacros, w.shift = {}, {}, 0, true
+        local function Note(...) w.calls[#w.calls + 1] = { ... } end
+        env.GetNumMacros = function() return 5, w.charMacros end
+        env.GetMacroInfo = function(index) return w.slots[index] end
+        env.CreateMacro = function(...) Note("create", ...) return 121 end
+        env.EditMacro = function(...) Note("edit", ...) return (...) end
+        env.PickupMacro = function(...) Note("macro", ...) end
+        env.C_Spell = { PickupSpell = function(...) Note("spell", ...) end }
+        env.C_ToyBox = { PickupToyBoxItem = function(...) Note("toy", ...) end }
+        env.C_Container = { PickupContainerItem = function(...) Note("bag", ...) end }
+        env.PickupInventoryItem = function(...) Note("equipped", ...) end
+        w.Note = Note
+        w.items = Object(w.everything)
+        w.list, w.reads = {}, 0
+        local base = getmetatable(w.items).__index
+        setmetatable(w.items, { __index = function(t, key)
+            if key == "buttonList" then
+                w.reads = w.reads + 1
+                return w.list
+            end
+            return base(t, key)
+        end })
+        w.rxp.activeItemFrame = w.items
+        w.rxp.UpdateItemFrame = function() end
+        return w
+    end
+    local function Button(w, fields)
+        local b = Object(w.everything)
+        b.regs = 0
+        function b:RegisterForDrag(...)
+            self.regs = self.regs + 1
+            self.dragFor = { ... }
+        end
+        for k, v in pairs(fields) do b[k] = v end
+        w.list[#w.list + 1] = b
+        w.rxp.UpdateItemFrame()
+        return b
+    end
+    local function Macro(w, name, body, icon)
+        local texture = Object(w.everything)
+        texture:SetTexture(icon)
+        return Button(w, { macro = true, name = name, icon = texture, attrs = { macrotext = body } })
+    end
+    local function Redraw(w)
+        w.rxp.v2:UpdateGuideWindow()
+        Flush(w)
+    end
+    local function Drag(b) b.hooks.OnDragStart(b) end
+    local BODY = "/cast Cooking\n/run print(1)"
+    local OURS = "RXP Active Item"
+
+    local w = Setup()
+    local egg = Macro(w, "Herb Baked Egg", BODY, 132834)
+    Check(egg.dragFor == nil, "a button is not wired before the window draws")
+    Redraw(w)
+    Check(egg.dragFor and egg.dragFor[1] == "LeftButton" and egg.regs == 1 and egg.hooks.OnDragStart ~= nil,
+        "a button of the Active Items window can be dragged with the left button")
+    Redraw(w)
+    Check(egg.regs == 1, "and is wired once")
+    local reads = w.reads
+    w.rxp.UpdateItemFrame()
+    Check(w.reads == reads + 1, "RestedXP's update is hooked once, however often the window draws")
+    local late = Button(w, { spell = true, itemId = 8004 })
+    w.rxp.UpdateItemFrame()
+    Check(late.dragFor ~= nil, "a button RestedXP makes as it updates the window is wired as well")
+
+    w.shift = false
+    Drag(egg)
+    Check(#w.calls == 0, "with no modifier held nothing is picked up")
+    Drag(late)
+    Check(#w.calls == 0, "whatever the button is")
+    w.shift = true
+
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "create" and w.calls[1][2] == OURS and w.calls[1][3] == 132834
+        and w.calls[1][4] == BODY and w.calls[1][5] == true and w.calls[2][1] == "macro" and w.calls[2][2] == 121,
+        "a macro is made for the character, with one name, the button's picture and text, and picked up")
+    w.calls, w.charMacros, w.slots[121] = {}, 1, OURS
+    Drag(Macro(w, "Sit", "/sit", 134414))
+    Check(#w.calls == 2 and w.calls[1][1] == "edit" and w.calls[1][2] == 121 and w.calls[1][3] == OURS
+        and w.calls[1][4] == 134414 and w.calls[1][5] == "/sit" and w.calls[2][1] == "macro" and w.calls[2][2] == 121,
+        "another button's macro is written over the same one, and picked up: no second macro is made")
+    w.calls, w.charMacros, w.slots = {}, 3, { [5] = OURS, [121] = "Mine", [123] = OURS }
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "edit" and w.calls[1][2] == 123,
+        "ours is looked for among the character's macros, after the account's, and found where it is")
+    w.calls, w.charMacros, w.slots = {}, 2, { [5] = OURS, [121] = "Mine", [122] = "Other" }
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "create", "a macro of that name among the account's is not ours and is not written over")
+    w.calls, w.slots, w.charMacros = {}, { [5] = OURS }, 0
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "create", "also with the character having none")
+    w.env.MAX_ACCOUNT_MACROS = 36
+    w.calls, w.slots, w.charMacros = {}, { [37] = OURS, [121] = OURS }, 1
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "edit" and w.calls[1][2] == 37,
+        "the number of account macros is the game's own when it says it")
+    w.env.MAX_ACCOUNT_MACROS = nil
+    w.slots, w.calls, w.charMacros = {}, {}, 0
+    local noicon = Button(w, { macro = true, name = "Sit", attrs = { macrotext = "/sit" } })
+    w.rxp.UpdateItemFrame()
+    Drag(noicon)
+    Check(w.calls[1] and w.calls[1][2] == OURS and w.calls[1][3] == 134400, "a button with no picture has the question mark")
+
+    w.calls, w.printed = {}, {}
+    local long = Macro(w, "Long", ("x"):rep(256), 1)
+    local exact = Macro(w, "Exact", ("x"):rep(255), 1)
+    w.rxp.UpdateItemFrame()
+    Drag(long)
+    Check(#w.calls == 0 and #w.printed == 1 and w.printed[1]:find("too long", 1, true), "a text of 256 is too long: said, and not made")
+    Drag(exact)
+    Check(#w.calls == 2 and w.calls[1][1] == "create", "and one of 255 is not")
+    w.calls, w.printed, w.charMacros = {}, {}, 18
+    Drag(egg)
+    Check(#w.calls == 0 and #w.printed == 1 and w.printed[1]:find("macros are full", 1, true),
+        "a character with 18 macros has no room: said, and nothing is made")
+    w.charMacros = 17
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "create", "and with 17 there is")
+    w.calls, w.printed, w.charMacros, w.slots[121] = {}, {}, 18, OURS
+    Drag(egg)
+    Check(#w.calls == 2 and w.calls[1][1] == "edit", "but ours, which is there, needs no room")
+    w.slots, w.calls, w.charMacros = {}, {}, 0
+    Drag(Macro(w, "Nothing", "", 1))
+    Check(#w.calls == 0, "a macro with no text is not made")
+    local bare = Button(w, { macro = true, name = "Bare" })
+    Drag(bare)
+    Check(#w.calls == 0, "nor one of a button with none")
+
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 1 and w.calls[1][1] == "spell" and w.calls[1][2] == 8004, "a spell is picked up")
+    Drag(Button(w, { toy = true, itemId = 64383 }))
+    Drag(Button(w, { bag = 0, slot = 3, itemId = 6948 }))
+    Drag(Button(w, { invSlot = 13, itemId = 2000 }))
+    Drag(Button(w, { itemId = 5 }))
+    Check(#w.calls == 4 and w.calls[2][1] == "toy" and w.calls[2][2] == 64383 and w.calls[3][1] == "bag"
+        and w.calls[3][2] == 0 and w.calls[3][3] == 3 and w.calls[4][1] == "equipped" and w.calls[4][2] == 13,
+        "a toy, an item in a bag and one worn are picked up where they are, and one that is nowhere is not")
+    w.env.C_Spell = nil
+    w.env.PickupSpell = function(...) w.Note("spell-global", ...) end
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 1 and w.calls[1][1] == "spell-global" and w.calls[1][2] == 8004, "a game that has the spell call as a global: that")
+    w.env.C_Spell = {}
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 1 and w.calls[1][1] == "spell-global", "a C_Spell without the call: the global one")
+    w.env.PickupSpell = nil
+    w.calls = {}
+    Drag(late)
+    Check(#w.calls == 0 and #w.reported == 0, "a game with neither: nothing happens, and nothing is reported")
+
+    w.calls = {}
+    w.env.InCombatLockdown = function() return true end
+    Drag(egg)
+    Check(#w.calls == 0, "in a fight nothing is picked up")
+    local fresh = Button(w, { spell = true, itemId = 1 })
+    w.rxp.UpdateItemFrame()
+    Check(fresh.dragFor == nil, "and a button made in a fight is not wired then")
+    w.env.InCombatLockdown = function() return false end
+    Redraw(w)
+    Check(fresh.dragFor ~= nil, "but when it is over")
+    w.env.GetCursorInfo = function() return "item", 6948 end
+    Drag(egg)
+    Check(#w.calls == 0, "with something on the cursor nothing is picked up")
+    w.env.GetCursorInfo = nil
+    w.env.CreateMacro = function() error("create") end
+    w.slots = {}
+    Drag(egg)
+    Check(#w.calls == 0 and #w.reported == 1 and w.reported[1]:find("create", 1, true),
+        "a macro that cannot be made is reported and not raised, and none is picked up")
+    w.env.GetNumMacros = function() error("count") end
+    Drag(egg)
+    Check(#w.calls == 0, "nor one whose count cannot be read")
+    w.env.C_Spell = { PickupSpell = function() error("spell") end }
+    Drag(late)
+    Check(#w.calls == 0, "and a pickup that raises is not raised")
+
+    local off = Setup({})
+    local plain = Macro(off, "Herb Baked Egg", BODY, 132834)
+    Redraw(off)
+    Check(plain.dragFor == nil, "with the window off nothing is wired")
+    local gone = Setup()
+    local wired = Macro(gone, "Herb Baked Egg", BODY, 132834)
+    Redraw(gone)
+    Check(wired.dragFor ~= nil, "the window on: wired")
+    gone.ns.SetRXPWindow(false)
+    Flush(gone)
+    Drag(wired)
+    Check(#gone.calls == 0, "turned off after: a button that was wired picks nothing up, its hook being there still")
+    local after = Button(gone, { spell = true, itemId = 8004 })
+    gone.rxp.UpdateItemFrame()
+    Check(after.dragFor == nil, "and one RestedXP makes then is not wired")
+    gone.ns.SetRXPWindow(true)
+    Flush(gone)
+    Redraw(gone)
+    Check(after.dragFor ~= nil, "on again: it is")
+    Drag(wired)
+    Check(#gone.calls > 0, "and what was wired picks up again")
+
+    local modern = Setup()
+    modern.rxp.activeItemFrame, modern.rxp.activeItemWindow = nil, modern.items
+    local fresh39 = Macro(modern, "Herb Baked Egg", BODY, 132834)
+    Redraw(modern)
+    Check(fresh39.dragFor and fresh39.dragFor[1] == "LeftButton", "4.11.39: a button of the widget can be dragged")
+    local later39 = Button(modern, { spell = true, itemId = 8004 })
+    modern.rxp.UpdateItemFrame()
+    Check(later39.dragFor ~= nil, "4.11.39: and one RestedXP makes as it updates the window")
+    local neither = Setup()
+    neither.rxp.activeItemFrame = nil
+    Redraw(neither)
+    Check(#neither.reported == 0, "RestedXP with no Active Items window: nothing to wire and no error")
+end
+
 -- RestedXP's windows that are not there yet are taken when they are, at whatever redraw is first
 do
     local w = Start({ rxpWindow = true }, { later = true })
@@ -2064,6 +2293,42 @@ do
     Flush(w)
     Check(buttons[1].placeholder.id == 2056011 and buttons[2].placeholder.id == 135274,
         "the window off: RestedXP's placeholders are back")
+
+    -- RestedXP's Active Items window is left where the player puts it, as its Active Targets window is: the window
+    -- gives it its look and no place, and nothing of it hangs from the window
+    local own = Begin({ rxpWindow = true }, Both)
+    local win, held = Window(own), own.rxp.activeItemFrame
+    held:ClearAllPoints()
+    held:SetPoint("CENTER", own.env.UIParent, "CENTER", 10, 20)
+    own.rxp.SetStep()
+    Flush(own)
+    local p = held.points[1]
+    Check(#held.points == 1 and p[1] == "CENTER" and p[2] == own.env.UIParent and p[4] == 10 and p[5] == 20,
+        "the Active Items window stays where it was put, through a redraw")
+    Check(held.savePosition == nil and held.mouse ~= false and held.title.mouse ~= false,
+        "RestedXP still saves its place and it is still moved by hand")
+    own.ns.SetRXPWindow(false)
+    Flush(own)
+    own.ns.SetRXPWindow(true)
+    Flush(own)
+    p = held.points[1]
+    Check(#held.points == 1 and p[1] == "CENTER" and p[4] == 10 and held.savePosition == nil and held.mouse ~= false,
+        "also with the window off and on")
+    held.IsProtected = function() return true end
+    local anchored = false
+    for _, o in ipairs(own.everything) do
+        if o.IsProtected and o:IsProtected() then
+            for _, point in ipairs(o.points or {}) do
+                if point[2] == win then anchored = true end
+            end
+        end
+    end
+    Check(not anchored, "and no frame with buttons hangs from the window: it would block its size in a fight")
+    own.env.InCombatLockdown = function() return true end
+    own.rxp.SetStep()
+    Flush(own)
+    Check(#own.reported == 0 and win.width > 0 and held.points[1][1] == "CENTER",
+        "the window is drawn in a fight, and the Active Items window is not moved")
 
     -- RestedXP 4.11.39: the same two windows are widgets. UpdateTheme restyles the frame, the title is the widget's and not
     -- the frame's, the frame has no UpdateVisuals and the targets no RenderTargetFrameBackground. Hooking what is not

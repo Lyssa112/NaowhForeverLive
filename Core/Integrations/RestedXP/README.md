@@ -273,6 +273,26 @@ Core/Integrations/RestedXP/
   the window again, once, out of combat; an entry that is there is left as it is. That hook cannot be taken off, so `Sync`
   asks `ns.RXPWindowActive()` first and does nothing once the window is turned off: RestedXP's lists are only written while
   the window is on.
+- The buttons of RestedXP's Active Items window (the macros of a die step or cooking, spells, items) can be dragged
+  onto an action bar, which RestedXP lets only a bag item do, while Shift is held (`WindowItems.lua`, wired from `Draw`
+  and after each `UpdateItemFrame`, out of combat, and only while the window is on: those hooks cannot be taken off, so
+  each asks `ns.RXPWindowActive()` first). Shift because RestedXP's buttons run their macro, spell or item on the press
+  of a plain click (`type1`, `AnyDown`), and a pressed modifier is not matched by that unprefixed attribute, so the
+  press that starts the drag does not run it first. A spell, a toy, an item in a bag or one worn is picked up where it
+  is. A macro has no place to be picked up from, so a real one is made: one macro of the character's, named
+  `RXP Active Item`, written again with the button's text and picture each time one is dragged, so that the
+  character's 18 macros do not fill up and no macro of the player's is written over: only the character's macros are
+  looked in (those after the `MAX_ACCOUNT_MACROS` account ones), so an account macro of that name is left alone too.
+  It is one macro, so what an earlier drag left on a bar becomes the latest one's. Over 255 letters or with all 18 of
+  the character's macros made, it says so and picks nothing up; in a fight nothing is.
+  The buttons are on the widget of the window (`activeItemWindow`) since RestedXP 4.11.39, and were on its frame
+  (`activeItemFrame`) before; `Items` takes the widget where there is one.
+- The Active Items window, where RestedXP puts the macro, spell and item buttons of a step (the /sit macro of a die
+  step, cooking), is left to the player as the Active Targets window is: RestedXP keeps its place and it is moved by
+  hand, and the window only gives it its look (`SkinFrames`). A first version hung it from the window; a frame with
+  secure buttons anchored to another makes that one protected, and the game blocked the window's own `SetWidth` in a
+  fight (`ADDON_ACTION_BLOCKED`), and anchored by screen offsets instead it could not be moved by hand. Nothing of it
+  is anchored to the window now, and a test makes the game's rule to see that it stays so.
 - The icon at the start of a row has a fixed size of its own (`ICON_SIZE`, 18, over the text's 13): the
   icon's font string is faced at it, so RestedXP's own icons (`|T...:0|t`, as tall as the text they are in)
   grow with it, and the column and the row are as big. The text is dropped to the middle of an icon that
