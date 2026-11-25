@@ -273,6 +273,10 @@ Core/Integrations/RestedXP/
   the next draw. The title has no bar at its side (the sub tasks keep theirs, which say open or done), and
   its icon is bigger by the bonus twice, as its text is bigger by it once; the column, the drop of the text
   and the row follow the icon's size of that row.
+- After a RestedXP update, `python Tools/build/rxp_contract.py` (the Forever client's RXPGuides folder, or the path
+  given) lists each function, frame and field this folder reaches into that RestedXP's Lua no longer has. A name
+  still written there is all it can say: the window's tests are for what it does. It asks for either name of the V2
+  switch, so it is a third one it reports.
 - RestedXP keeps its settings by profile, which is a character's own unless the player shares one, so a
   character it has not met has its defaults: the V2 interface off, which the window needs, and its own
   theme. Set Up New Characters (off to start, the first thing in the window's (V2) fold) sets a
