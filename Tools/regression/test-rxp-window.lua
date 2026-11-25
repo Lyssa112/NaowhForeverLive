@@ -130,6 +130,7 @@ local function World(account, opts)
     env.InCombatLockdown = function() return false end
     w.reported = {}
     env.geterrorhandler = function() return function(e) w.reported[#w.reported + 1] = tostring(e) end end
+    env.IsMouseButtonDown = function() return w.mouseDown == true end
     env.IsShiftKeyDown = function() return w.shift == true end
     env.C_AddOns = { DoesAddOnExist = function(name) return opts.installed ~= false and name == "RXPGuides" end }
     env.C_Timer = { After = function(_, fn) w.timers[#w.timers + 1] = fn end }
@@ -1701,6 +1702,72 @@ do
     ns.RXPWindowRefresh()
     Flush(w)
     Check(f.grip.shown == false and f.resizable == false, "folded: there is no list to size, and no grip")
+end
+
+-- a redraw hides and shows every row and box, so it waits while the window is pressed on or dragged
+do
+    local account = { rxpWindow = true }
+    local w = Start(account)
+    local ns = w.env.NaowhForever
+    local f = Window(w)
+    local source
+    for _, o in ipairs(w.frames) do
+        if o.parent == f and o.scripts.OnDragStart and Seen(o) then source = o break end
+    end
+    Check(source ~= nil, "there is a box or a row to drag the window by")
+    local hides = 0
+    local hide = source.Hide
+    source.Hide = function(self)
+        hides = hides + 1
+        hide(self)
+    end
+    f.IsMouseOver = function() return w.over == true end
+    local function Ask()
+        ns.RXPWindowRefresh()
+        Flush(w)
+    end
+
+    w.mouseDown = true
+    source.scripts.OnDragStart(source)
+    Check(f.moving == true, "dragged: the window follows the mouse")
+    Ask()
+    Check(hides == 0 and #w.timers == 1,
+        "a redraw asked for meanwhile is not made, with the mouse outside the window as in a quick move, and is asked again")
+    Flush(w)
+    Check(hides == 0 and #w.timers == 1, "and again, for as long as the mouse is held")
+    w.mouseDown = false
+    source.scripts.OnDragStop(source)
+    Check(f.moving == false, "let go: it stays")
+    Flush(w)
+    Check(hides == 1 and #w.timers == 0, "and the redraw is made then, once")
+
+    account.rxpWindowPos = nil
+    w.mouseDown = true
+    source.scripts.OnDragStart(source)
+    Ask()
+    w.mouseDown = false
+    Flush(w)
+    Check(f.moving == false and hides == 2 and #w.timers == 0,
+        "a move whose end was not heard is ended at the next redraw, and the redraw is made")
+    Check(account.rxpWindowPos ~= nil, "and the place it ended up in is kept")
+
+    w.mouseDown, w.over = true, true
+    Ask()
+    Check(hides == 2 and #w.timers == 1, "a press on the window that has not become a drag does not have it redrawn either")
+    w.mouseDown = false
+    Flush(w)
+    Check(hides == 3 and #w.timers == 0, "and is let go of")
+
+    w.mouseDown, w.over = true, false
+    Ask()
+    Check(hides == 4 and #w.timers == 0, "the button held anywhere else, to turn the camera, has no effect on it")
+
+    w.over = true
+    f.grip.scripts.OnMouseDown(f.grip)
+    Ask()
+    Check(hides == 5 and #w.timers == 0, "and while the window is sized it is drawn as it was")
+    f.grip.scripts.OnMouseUp(f.grip)
+    w.mouseDown = false
 end
 
 -- RestedXP's Active Targets and Active Items windows take the look of the active step

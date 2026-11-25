@@ -37,12 +37,13 @@ local SCROLL_W, SCROLL_GAP, SCROLL_MIN = 2, 4, 12
 local SCROLL_ROOM = SCROLL_W + SCROLL_GAP
 local HOME = { "LEFT", "LEFT", 0, 35 }
 local DRAG_BUTTON, TIP_ANCHOR = "LeftButton", "ANCHOR_TOP"
+local HELD_RETRY = 0.1
 local ACCENT = "accent"
 local TARGET_PLACEHOLDER, MOB_PLACEHOLDER = 2056011, 135274
 local PLACEHOLDER_GLYPHS = { [TARGET_PLACEHOLDER] = "gossip", [MOB_PLACEHOLDER] = "combat" }
 local OUTLINE_FLAGS = { outline = "OUTLINE", thick = "THICKOUTLINE", slug = "OUTLINE, SLUG" }
 
-local window, active, started, pending, styled, wantsBags
+local window, active, started, pending, styled, wantsBags, moving
 local retake = true
 local sizing, sizingModel
 local scroll, anchorGuide, anchorAfter = 0
@@ -55,18 +56,22 @@ local followed = setmetatable({}, { __mode = "k" })
 local targetingHooked
 local faced = {}
 local Draw
+local Held
 
 local function Settings()
     return ns.AccountSettings()
 end
 
+local function Settle()
+    if Held() then return C_Timer.After(HELD_RETRY, Settle) end
+    pending = false
+    Draw()
+end
+
 local function Refresh()
     if not active or pending then return end
     pending = true
-    C_Timer.After(0, function()
-        pending = false
-        Draw()
-    end)
+    C_Timer.After(0, Settle)
 end
 
 ns.RXPWindowRefresh = Refresh
@@ -355,15 +360,30 @@ local function Skin()
     end
 end
 
+local function StopMoving()
+    moving = false
+    window:StopMovingOrSizing()
+    Save(window)
+end
+
+-- a redraw hides and shows every row and box, so one while the window is pressed on takes the frame the press began
+-- on out from under the mouse and the drag never ends; it waits for the mouse button instead. A move whose end was
+-- never heard (the button is up and the window is still following the mouse) is ended here.
+function Held()
+    if not window then return false end
+    local down = IsMouseButtonDown(DRAG_BUTTON)
+    if moving and not down then StopMoving() end
+    return down and not sizing and (moving or window:IsMouseOver())
+end
+
 local function Draggable(frame)
     frame:RegisterForDrag(DRAG_BUTTON)
     frame:SetScript("OnDragStart", function()
-        if not ns.RXPWindowOption("rxpWindowLock") then window:StartMoving() end
+        if ns.RXPWindowOption("rxpWindowLock") then return end
+        moving = true
+        window:StartMoving()
     end)
-    frame:SetScript("OnDragStop", function()
-        window:StopMovingOrSizing()
-        Save(window)
-    end)
+    frame:SetScript("OnDragStop", StopMoving)
 end
 
 local function GoTo(index)

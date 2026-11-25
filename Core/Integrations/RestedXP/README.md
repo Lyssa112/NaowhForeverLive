@@ -94,6 +94,12 @@ Core/Integrations/RestedXP/
 - A row shows the text RestedXP has in its own row now (`element.frame.text`), so counters such as
   "5/5" follow it; a post-hook on that text asks for a redraw. A click on a row is a click on
   RestedXP's own checkbox, so what it does for a skipped step is RestedXP's.
+- A redraw hides and shows every pooled row and box, and RestedXP asks for one at any moment, so one that falls
+  while the mouse is held on the window (a press that is not yet a drag, or the drag) would take the frame the
+  press began on out from under it: `OnDragStop` is never sent and the window keeps following the mouse, or the
+  drag never starts. `Settle` leaves the redraw until the button is up (`Held`, asked again every `HELD_RETRY`),
+  and a move whose end was not heard is ended there. While the window is sized by the grip the redraw is made as
+  before, as that is drawn live.
 - Everything that changes asks for a redraw, and the redraw is one per frame (`C_Timer.After(0)`):
   `SetStep`, `UpdateGuideWindow`, `UpdateActiveStepsFrame`, `UpdatePlayerActiveStepItem` and the
   rows' text. The first four are RestedXP building what it shows and the last is a counter ticking:
