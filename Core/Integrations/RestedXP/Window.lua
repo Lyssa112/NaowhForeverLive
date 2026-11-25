@@ -21,6 +21,7 @@ local BAG_EVENT = "BAG_UPDATE_DELAYED"
 local SHADOW, SHADOW_ALPHA = 1, 0.9
 local TEXT_FOLD, TEXT_UNFOLD, TEXT_DOT = "-", "+", " \194\183 "
 local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
+local LOGO_FILTER = "TRILINEAR"
 local GRADIENT = ns.MEDIA .. "NaowhGradient.tga"
 local GRIP_UP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up"
 local GRIP_DOWN = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down"
@@ -568,6 +569,13 @@ local function Build()
     return f
 end
 
+local function LogoPath()
+    local v2 = Dig(_G.RXP, "v2")
+    local theme = Has(v2, "GetTheme") and Run("WindowLogo", v2.GetTheme, v2)
+    local path = Dig(theme, "guideWindow", "logo")
+    return type(path) == "string" and path ~= "" and path or LOGO
+end
+
 local function MakeBox()
     local T = ns.THEME
     local box = CreateFrame("Button", nil, window)
@@ -581,7 +589,6 @@ local function MakeBox()
     box.edge = ns.Border(box)
     box.label = Text(box, "rxpWindowTextSize")
     box.logo = box:CreateTexture(nil, "OVERLAY")
-    box.logo:SetTexture(LOGO)
     return box
 end
 
@@ -787,6 +794,11 @@ local function DrawBox(step, y, inner, current)
         box.logo:ClearAllPoints()
         box.logo:SetPoint("TOPRIGHT", box, "TOPRIGHT", -BOX_PAD, -BOX_PAD)
         box.logo:SetSize(LOGO_SIZE, LOGO_SIZE)
+        local path = LogoPath()
+        if box.logoPath ~= path then
+            box.logoPath = path
+            box.logo:SetTexture(path, nil, nil, LOGO_FILTER)
+        end
         box.logo:Show()
         head = math.max(size, LOGO_SIZE)
     else

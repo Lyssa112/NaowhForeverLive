@@ -45,7 +45,7 @@ local function Object(everything)
     end
     function o:SetTextColor(r, g, b) self.color = { r, g, b } end
     function o:SetColorTexture(r, g, b, a) self.solid = { r, g, b, a } end
-    function o:SetTexture(path) self.texture = path end
+    function o:SetTexture(path, _, _, filter) self.texture, self.filter = path, filter end
     function o:RegisterForClicks(...) self.clicksFor = { ... } end
     function o:RegisterEvent(event)
         self.events = self.events or {}
@@ -250,6 +250,15 @@ local function Rxp(w, opts)
         v2 = { snapshots = 0 },
         SetStep = function() end,
     }
+    w.themeLogo = "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo"
+    if not opts.noTheme then
+        function rxp.v2:GetTheme()
+            if opts.themeRaises then error("theme") end
+            if opts.themeBare then return {} end
+            if opts.themeNoLogo then return { guideWindow = {} } end
+            return { guideWindow = { logo = opts.logo ~= nil and opts.logo or w.themeLogo } }
+        end
+    end
     function rxp.GetGuideProgress() return 36, "id" end
     function rxp.GetGuideName(guide) return guide.name end
     rxp.v2[opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled"] = function() return opts.v2 ~= false end
@@ -502,6 +511,47 @@ do
     Check(w.menus == 1, "a right click opens RestedXP's own menu")
     f.scripts.OnMouseUp(f, "LeftButton")
     Check(w.menus == 1, "a left click does not")
+end
+
+-- the logo is the one of RestedXP's active theme, as its own V2 window has it, drawn smooth as it draws it
+do
+    local function Logo(opts)
+        local w = Start({ rxpWindow = true }, opts)
+        local box
+        for _, o in ipairs(w.frames) do
+            if o.label and o.logo and Seen(o) then box = o end
+        end
+        return box.logo, w
+    end
+    local V2 = "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo"
+    local logo, w = Logo()
+    Check(logo.texture == V2 and logo.filter == "TRILINEAR", "the logo is the theme's, with its smooth filter")
+    -- a theme picked later has its own: the next draw, and the picture is not set again while it is the same
+    local sets, set = 0, logo.SetTexture
+    logo.SetTexture = function(self, ...)
+        sets = sets + 1
+        return set(self, ...)
+    end
+    w.themeLogo = "Interface/AddOns/RXPGuides/Textures/Hardcore/rxp_logo-64"
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    Check(logo.texture == w.themeLogo and sets == 1 and logo.filter == "TRILINEAR", "another theme: its logo at the next draw")
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    Check(sets == 1, "and it is not set again while it is the same")
+    -- what RestedXP does not give: its older logo
+    local function Older(opts, label)
+        local picture, world = Logo(opts)
+        Check(picture.texture:find("rxp_logo-64", 1, true) and picture.filter == "TRILINEAR", label)
+        return world
+    end
+    Older({ noTheme = true }, "a RestedXP that has no theme call: its older logo")
+    Older({ themeBare = true }, "a theme with no window part: the older")
+    Older({ themeNoLogo = true }, "a window part with no logo: the older")
+    Older({ logo = "" }, "a logo that is empty: the older")
+    Older({ logo = 5 }, "and one that is not text")
+    local raised = Older({ themeRaises = true }, "a theme that raises: the older logo")
+    Check(#raised.reported == 1 and raised.reported[1]:find("theme", 1, true), "and it is reported and not raised")
 end
 
 -- the size: the window scales as a whole and stays in the same place on the screen
@@ -2293,7 +2343,6 @@ do
     local account = { rxpWindow = true }
     local w = Start(account)
     local f = Window(w)
-    local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
     local function Boxes()
         local out = {}
         for _, o in ipairs(w.frames) do
@@ -2302,8 +2351,8 @@ do
         return out
     end
     local boxes = Boxes()
-    Check(#boxes == 1 and boxes[1].logo.shown and boxes[1].logo.texture == LOGO,
-        "RestedXP's logo, from RestedXP's own files, is in the current step's box")
+    Check(#boxes == 1 and boxes[1].logo.shown and boxes[1].logo.texture == "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo",
+        "RestedXP's logo, the icon of its V2 window from its own files, is in the current step's box")
     local logo = boxes[1].logo
     Check(logo.points[1][1] == "TOPRIGHT" and logo.points[1][2] == boxes[1] and logo.points[1][3] == "TOPRIGHT"
         and logo.points[1][4] == -7 and logo.points[1][5] == -7, "in its top right corner")
