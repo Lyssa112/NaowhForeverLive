@@ -16,6 +16,7 @@ Core/Integrations/RestedXP/
   Themes.lua     the themes, the settings behind the RESTEDXP card, and the hooks
   WindowSettings.lua  what the window can be changed in: its options, colors and theme
   WindowModel.lua     what RestedXP shows, read as plain data for the window to draw
+  WindowItems.lua     RestedXP's Active Items window: what a step has is listed the first time it is shown
   Window.lua     the Naowh guide window: its frames, drawing, clicks and the look of the two small windows
   Icons.lua      Naowh's step icons, put in RestedXP's icon table as it loads
   Waypoint.lua   optional current guide destination feed for the world pin, routed by Journeys when on
@@ -168,9 +169,10 @@ Core/Integrations/RestedXP/
   With the switch off RestedXP's own font (`RXP.font`) is given back. The
   window uses `ns.AddonFontPath`, which is read live, and not `ns.UIFontPath`, which keeps the first
   path it found.
-- The window is three files in load order, each one job: `WindowSettings.lua` (what can be changed, read
+- The window is four files in load order, each one job: `WindowSettings.lua` (what can be changed, read
   live by the others; it tells the window to draw again through `ns.RXPWindowRefresh`, which the window
-  defines), `WindowModel.lua` (reads RestedXP and returns tables; draws nothing) and `Window.lua` (frames).
+  defines), `WindowModel.lua` (reads RestedXP and returns tables; draws nothing), `WindowItems.lua` (the Active Items
+  window) and `Window.lua` (frames).
   What each reads of the others is a function on `ns`, never a file-level local. `Run`, which returns
   what a call into RestedXP returned and reports what raised, is shared through `ns.RXPSafe` with `Has`
   and `Dig`.
@@ -263,6 +265,14 @@ Core/Integrations/RestedXP/
   that RestedXP sets again at each `UpdateTargetFrame`), and with a step icon style picked those are the
   gossip and combat glyphs (`RXPIconTexture`), put right after each update and given back when the window
   goes off; a portrait is never touched.
+- RestedXP's V2 puts what the active steps want in its lists for the Active Items window (`activeMacros`,
+  `activeSpells`, `activeItems`) in `SetStep`, before its `UpdateActiveStepsFrame` has bound the steps' elements, which is
+  what makes a step's macro, spell or item, so the first time a step is shown the lists and the window are empty and it
+  came the second time (the /sit macro of a die step was not there). `Sync` in `WindowItems.lua`, after each
+  `UpdateActiveStepsFrame` and at each draw, puts what the active steps have in the lists where it is missing and makes
+  the window again, once, out of combat; an entry that is there is left as it is. That hook cannot be taken off, so `Sync`
+  asks `ns.RXPWindowActive()` first and does nothing once the window is turned off: RestedXP's lists are only written while
+  the window is on.
 - The icon at the start of a row has a fixed size of its own (`ICON_SIZE`, 18, over the text's 13): the
   icon's font string is faced at it, so RestedXP's own icons (`|T...:0|t`, as tall as the text they are in)
   grow with it, and the column and the row are as big. The text is dropped to the middle of an icon that

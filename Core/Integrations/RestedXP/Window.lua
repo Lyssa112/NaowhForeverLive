@@ -979,6 +979,7 @@ function Draw()
     DrawChrome(y, listH, folded)
     local guide = Dig(_G.RXPV2GuideWindow, "frame")
     window:SetShown(not guide or guide:IsShown())
+    if not sizing then ns.RXPItemsStart() end
 end
 
 local function Apply()
@@ -1009,6 +1010,10 @@ function ns.RXPWindowReady()
     local v2 = Dig(_G.RXP, "v2")
     local enabled = Has(v2, "IsEnabled") and v2.IsEnabled or Has(v2, "IsGuideWindowEnabled") and v2.IsGuideWindowEnabled
     return enabled and enabled(v2) and true or false
+end
+
+function ns.RXPWindowActive()
+    return active == true
 end
 
 function ns.RXPWindowStart()

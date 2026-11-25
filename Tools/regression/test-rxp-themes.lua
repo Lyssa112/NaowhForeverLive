@@ -9,7 +9,7 @@ local coreSource = Read("Core/Core.lua")
 local featuresSource = Read("Core/Features.lua")
 local moduleSource = Read("Core/Integrations/RestedXP/Themes.lua")
 local windowSources = {}
-for _, name in ipairs({ "WindowSettings", "WindowModel", "Window" }) do
+for _, name in ipairs({ "WindowSettings", "WindowModel", "WindowItems", "Window" }) do
     windowSources[#windowSources + 1] = { Read("Core/Integrations/RestedXP/" .. name .. ".lua"), name }
 end
 

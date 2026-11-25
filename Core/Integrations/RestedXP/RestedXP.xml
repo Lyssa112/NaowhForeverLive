@@ -3,6 +3,7 @@
     <Script file="Themes.lua"/>
     <Script file="WindowSettings.lua"/>
     <Script file="WindowModel.lua"/>
+    <Script file="WindowItems.lua"/>
     <Script file="Window.lua"/>
     <Script file="Icons.lua"/>
     <Script file="Waypoint.lua"/>
