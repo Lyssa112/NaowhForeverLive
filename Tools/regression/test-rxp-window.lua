@@ -131,7 +131,10 @@ local function World(account, opts)
     w.reported = {}
     env.geterrorhandler = function() return function(e) w.reported[#w.reported + 1] = tostring(e) end end
     env.IsShiftKeyDown = function() return w.shift == true end
-    env.C_AddOns = { DoesAddOnExist = function(name) return opts.installed ~= false and name == "RXPGuides" end }
+    env.C_AddOns = {
+        DoesAddOnExist = function(name) return opts.installed ~= false and name == "RXPGuides" end,
+        IsAddOnLoaded = function(name) return opts.installed ~= false and not opts.disabled and name == "RXPGuides" end,
+    }
     env.C_Timer = { After = function(_, fn) w.timers[#w.timers + 1] = fn end }
     env.SetItemRef = function(link) w.links[#w.links + 1] = link end
     w.items = {}
@@ -182,6 +185,8 @@ local function World(account, opts)
     end
     ns.UI = { FontPath = function(name) return "Fonts\\" .. name .. ".ttf" end,
         TexturePath = function(name) return "Textures\\" .. name end }
+    w.printed = {}
+    ns.Print = function(msg) w.printed[#w.printed + 1] = msg end
     ns.Hairline = function() end
     ns.OnePixel = function() return 1 end
     ns.Shared = { Style = { FOREVER_FIELD_RGB = { r = 0, g = 0, b = 0 } }, Parts = {
@@ -203,6 +208,7 @@ local function World(account, opts)
         setfenv(chunk, env)
         chunk("NaowhForever")
     end
+    if opts.setupPending then ns.RXPSetUpPending = function() return true end end
     local make = env.CreateFrame
     env.CreateFrame = function() return Object(w.everything) end
     local icons = assert(loadstring(iconsSource, "Icons"))
@@ -252,7 +258,8 @@ local function Rxp(w, opts)
     }
     function rxp.GetGuideProgress() return 36, "id" end
     function rxp.GetGuideName(guide) return guide.name end
-    rxp.v2[opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled"] = function() return opts.v2 ~= false end
+    local switch = opts.v2Switch or (opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled")
+    rxp.v2[switch] = function() return opts.v2 ~= false end
     function rxp.v2:BuildGuideStepsSnapshot()
         self.snapshots = self.snapshots + 1
         if opts.snapshotRaises then error("snapshot") end
@@ -265,7 +272,7 @@ local function Rxp(w, opts)
     end
     function rxp.v2:UpdateActiveStepsFrame() end
     function rxp.v2:UpdatePlayerActiveStepItem() end
-    env.RXP = rxp
+    env.RXP = not opts.disabled and rxp or nil
     -- RestedXP's two v2 windows, with children that take the mouse
     local guide = { frame = Object(w.everything) }
     local button = Object(w.everything)
@@ -419,6 +426,53 @@ do
     w.ns.RXPWindowRefresh()
     Flush(w)
     Check(f.title.text == "Fishing" and f.subtitle.shown == false, "a guide with a title of its own has one line")
+end
+
+-- a player who turned the window on and sees none is told why, once for each reason
+do
+    local w = Start({ rxpWindow = true }, { v2 = false })
+    Check(Window(w) == nil and #w.printed == 1 and w.printed[1]:find("V2 interface is off", 1, true),
+        "RestedXP's V2 interface off: the window is not there, and the player is told why")
+    w.ns.RXPWindowStart()
+    w.ns.SetRXPWindow(true)
+    Check(#w.printed == 1, "and told once")
+    w.rxp.v2.IsEnabled = nil
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2 and w.printed[2]:find("changed the interface", 1, true),
+        "the switch gone under every name we know: told that RestedXP changed, which is the other reason")
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2, "and that once too")
+    w.rxp.v2.IsEnabled = function() return true end
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2 and Window(w) ~= nil, "the interface on: the window is built and nothing more is said")
+
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown" })
+    Check(#w.printed == 1 and w.printed[1]:find("changed the interface", 1, true) and Window(w) == nil,
+        "a RestedXP with another name for it: told it changed")
+    w = Start({ rxpWindow = true })
+    Check(#w.printed == 0 and Window(w) ~= nil, "ready: nothing is said")
+    w = Start({}, { v2 = false })
+    Check(#w.printed == 0, "the window not turned on: nothing is said")
+    w = Start({ rxpWindow = true }, { v2 = false, installed = false })
+    Check(#w.printed == 0, "RestedXP not there: nothing is said")
+    w = Start({ rxpWindow = true }, { v2 = false, disabled = true })
+    Check(#w.printed == 0 and Window(w) == nil,
+        "RestedXP installed and disabled: nothing is said, it has no interface to be off or to have changed")
+    w = Start({ rxpWindow = true }, { disabled = true })
+    Check(#w.printed == 0, "disabled and RestedXP's global not there: nor is it said to have changed")
+
+    w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
+    Check(#w.printed == 0, "off while Naowh turns it on at the next reload: nothing, the reload says so")
+    w.ns.RXPSetUpPending = function() return false end
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 1 and w.printed[1]:find("V2 interface is off", 1, true),
+        "and told when it is not coming after all")
+    w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
+    w.ns.RXPSetUpPending = function() return false end
+    w.ns.SetRXPWindow(false)
+    Check(#w.printed == 0, "turned off, it is not told that it cannot show")
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown", setupPending = true })
+    Check(#w.printed == 1, "a changed RestedXP is told whatever is pending")
 end
 
 -- every text of the window is in the Addon Font
@@ -1163,6 +1217,23 @@ do
         "RestedXP's V2 interface off: no window, and RestedXP's own is left alone")
     w = Start({ rxpWindow = true }, { oldV2 = true })
     Check(w.ns.RXPWindowReady() == true and Window(w) ~= nil, "RestedXP before 4.11.38 (IsGuideWindowEnabled): ready")
+    w = Start({ rxpWindow = true }, { oldV2 = true, v2 = false })
+    Check(Window(w) == nil and w.ns.RXPWindowReady() == false and w.guide.frame.alpha == nil,
+        "and off under it: no window, and RestedXP's own is left alone")
+    w = Start({ rxpWindow = true })
+    w.rxp.v2.IsGuideWindowEnabled = function() return true end
+    w.rxp.v2.IsEnabled = function() return false end
+    Check(w.ns.RXPWindowReady() == false, "both names: the newer one is the one asked")
+    w.rxp.v2.IsGuideWindowEnabled = function() return false end
+    w.rxp.v2.IsEnabled = function() return true end
+    Check(w.ns.RXPWindowReady() == true, "the newer one on: on, whatever the older one says")
+    w.rxp.v2.IsEnabled = "gone"
+    w.rxp.v2.IsGuideWindowEnabled = function() return true end
+    Check(w.ns.RXPWindowReady() == true, "a name that is not a function is passed over")
+    w.rxp.v2.IsEnabled = nil
+    Check(w.ns.RXPWindowReady() == true, "and the older one when it is the only one")
+    w.rxp.v2.IsGuideWindowEnabled = nil
+    Check(w.ns.RXPWindowReady() == false, "neither name: not ready, and nothing is raised")
     w = Start({ rxpWindow = true })
     w.rxp.currentGuide = { empty = true, steps = {} }
     w.rxp.v2:UpdateGuideWindow()

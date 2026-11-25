@@ -98,8 +98,16 @@ Core/Integrations/RestedXP/
   `SetStep`, `UpdateGuideWindow`, `UpdateActiveStepsFrame`, `UpdatePlayerActiveStepItem` and the
   rows' text. The first four are RestedXP building what it shows and the last is a counter ticking:
   only the first four make the redraw read RestedXP's steps and walk its windows again (`Rebuilt`).
-  The window needs RestedXP's V2 interface (`v2:IsEnabled()`, `v2:IsGuideWindowEnabled()` before
-  RestedXP 4.11.38): the active step rows and the guide's rows are built for it.
+  The window needs RestedXP's V2 interface (`v2:IsEnabled()`, which RestedXP 4.11.38 renamed from
+  `v2:IsGuideWindowEnabled()`, so the new name is asked first and the old one when there is no new one): the
+  active step rows and the guide's rows are built for it.
+- A player who turned the window on and has none is told why, in chat, once for each reason (`Tell`, from `Apply`, so
+  at login and when the switch is turned on): RestedXP's V2 interface is off (`ns.RXPWindowWhy`), or RestedXP has
+  none of the names we know for that switch, which is what a RestedXP update that renames it looks like. Until
+  4.11.38's rename it was silent: the window just did not show. Off is not said while Naowh is about to turn
+  that interface on at the next reload (`ns.RXPSetUpPending`), as that reload is the answer. Nothing is said unless
+  RestedXP is loaded (`C_AddOns.IsAddOnLoaded`): an installed RestedXP that is disabled has no interface to be off
+  or to have changed, and `DoesAddOnExist` is true for it.
 - The list under the active step is the guide's steps as `v2:BuildGuideStepsSnapshot` has them, which
   is what RestedXP's own v2 guide window lists: a step it hides is not listed, and a step done is, a
   little dimmer, so that a step can be gone back to. It starts at the first step after the active one

@@ -48,7 +48,8 @@ local function RealCore(account, rxp, up)
     local frame = setmetatable({}, { __index = function() return function() end end })
     function frame:SetScript() end
     local env = { CreateFrame = function() return frame end,
-        C_AddOns = { DoesAddOnExist = function(name) return rxp == true and name == "RXPGuides" end },
+        C_AddOns = { DoesAddOnExist = function(name) return rxp == true and name == "RXPGuides" end,
+            IsAddOnLoaded = function(name) return rxp == true and name == "RXPGuides" end },
         NaowhForeverDB = { account = account, profiles = {}, charActive = {} } }
     env._G = env
     env.RXP = up
@@ -60,6 +61,7 @@ local function RealCore(account, rxp, up)
     local features = assert(loadstring(featuresSource, "Features"))
     setfenv(features, env)
     features()
+    env.NaowhForever.Print = function() end
     local module = assert(loadstring(rxpSource, "RXPThemes"))
     setfenv(module, env)
     module("NaowhForever")
