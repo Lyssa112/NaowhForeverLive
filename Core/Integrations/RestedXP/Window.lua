@@ -38,6 +38,7 @@ local SCROLL_ROOM = SCROLL_W + SCROLL_GAP
 local HOME = { "LEFT", "LEFT", 0, 35 }
 local DRAG_BUTTON, TIP_ANCHOR = "LeftButton", "ANCHOR_TOP"
 local ACCENT = "accent"
+local LINK_POPUP = "RXP_Link"
 local TARGET_PLACEHOLDER, MOB_PLACEHOLDER = 2056011, 135274
 local PLACEHOLDER_GLYPHS = { [TARGET_PLACEHOLDER] = "gossip", [MOB_PLACEHOLDER] = "combat" }
 local OUTLINE_FLAGS = { outline = "OUTLINE", thick = "THICKOUTLINE", slug = "OUTLINE, SLUG" }
@@ -186,6 +187,18 @@ local function PickGuide()
         Run("WindowPick", v2.ShowGuideSelectionMenu, v2)
     else
         Menu()
+    end
+end
+
+local function OpenLink(url)
+    local rxp = _G.RXP
+    local comms = Dig(rxp, "comms")
+    if Has(comms, "OpenLink") then
+        Run("WindowLink", comms.OpenLink, url)
+    elseif type(rxp) == "table" and type(_G.StaticPopup_Show) == "function" then
+        rxp.url = url
+        Run("WindowLink", _G.StaticPopup_Show, LINK_POPUP)
+        rxp.url = nil
     end
 end
 
@@ -402,6 +415,11 @@ local function StepClick(self, button)
     if MaySkip() then SkipStep(self.step) end
 end
 
+local function RowClick(self, button)
+    if self.url and button == "LeftButton" and not IsShiftKeyDown() then return OpenLink(self.url) end
+    StepClick(self, button)
+end
+
 local function Tip(owner, text, menu, plain)
     if not ns.RXPWindowOption("rxpWindowTips") or GameTooltip:IsForbidden() then return end
     local mode = ns.RXPWindowOption("rxpWindowSkip")
@@ -416,6 +434,13 @@ local function Tip(owner, text, menu, plain)
         if mode == "shift" then GameTooltip:AddLine(TEXT_SHIFT, TIP_DIM, TIP_DIM, TIP_DIM) end
         if menu then GameTooltip:AddLine(TEXT_MENU, TIP_DIM, TIP_DIM, TIP_DIM) end
     end
+    GameTooltip:Show()
+end
+
+local function LinkTip(row)
+    if not ns.RXPWindowOption("rxpWindowTips") or GameTooltip:IsForbidden() then return end
+    GameTooltip:SetOwner(row, TIP_ANCHOR)
+    GameTooltip:AddLine(row.url, 1, 1, 1, true)
     GameTooltip:Show()
 end
 
@@ -605,8 +630,11 @@ local function MakeRow()
     row:SetScript("OnHyperlinkEnter", LinkEnter)
     row:SetScript("OnHyperlinkLeave", LinkLeave)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    row:SetScript("OnClick", StepClick)
-    row:SetScript("OnEnter", function(self) Tip(self.box or self, TEXT_SKIP, true) end)
+    row:SetScript("OnClick", RowClick)
+    row:SetScript("OnEnter", function(self)
+        if self.url then return LinkTip(self) end
+        Tip(self.box or self, TEXT_SKIP, true)
+    end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
     row.bar = ns.Solid(row, "ARTWORK", ns.THEME.accent, 1)
     row.icon = Text(row, ICON_SIZE, nil, true)
@@ -718,6 +746,7 @@ local function DrawRow(box, row, x, y, width, first)
     item:SetParent(box)
     item.box = box
     item.step = row.step
+    item.url = row.url
     item:ClearAllPoints()
     item:SetPoint("TOPLEFT", box, "TOPLEFT", x, y)
     item:SetWidth(width)

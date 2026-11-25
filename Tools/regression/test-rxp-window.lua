@@ -230,6 +230,14 @@ local function Rxp(w, opts)
     local buy = { text = "Buy", tag = "buy", frame = Row("Buy [Refreshing Spring Water] from her", "buy", "|Tbuy|t", false) }
     local vendor = { text = "Vendor Trash", tag = "vendor", frame = Row("Vendor Trash", "vendor", "|Tv|t", true) }
     local active = { active = true, index = 36, title = "Step 36", elements = { talk, buy, vendor } }
+    if opts.link then
+        w.video = { text = "Click here for a video guide", tag = "link", url = "https://youtu.be/abc",
+            frame = Row("Click here for a video guide", "link", "|Tlink|t", false) }
+        w.decoy = { text = "Not a link", tag = "target", url = "https://not.a/link",
+            frame = Row("Not a link", "target", "|Ttalk|t", false) }
+        w.odd = { text = "Odd link", tag = "link", url = true, frame = Row("Odd link", "link", "|Tlink|t", false) }
+        active.elements = { talk, buy, vendor, w.video, w.decoy, w.odd }
+    end
     local tipOnly = { active = true, index = 37, hidewindow = true, elements = { { text = "A tip" } } }
     local idle = { active = false, index = 38, elements = { { text = "Not active" } } }
     local rows = {}
@@ -527,6 +535,72 @@ do
         "with the window off the place that was kept follows the size")
     local sized = Start({ rxpWindow = true, rxpWindowScale = 125 })
     Check(Window(sized).scale == 1.25, "a saved size is the size it is built at")
+end
+
+-- a link of a step (a video guide) is opened by a click, as RestedXP's own window does
+do
+    local w = Start({ rxpWindow = true }, { link = true })
+    local rxp = w.rxp
+    local link, decoy, plain, odd
+    for _, o in ipairs(w.frames) do
+        if o.icon and o.text and o.bar and o.scripts.OnClick and o.shown ~= false then
+            local text = o.text.text or ""
+            if text:find("video guide", 1, true) then link = o end
+            if text:find("Not a link", 1, true) then decoy = o end
+            if text:find("Odd link", 1, true) then odd = o end
+            if text:find("Talk to", 1, true) then plain = o end
+        end
+    end
+    Check(link ~= nil and link.url == "https://youtu.be/abc", "the row of a link carries its address")
+    Check(decoy ~= nil and decoy.url == nil and plain ~= nil and plain.url == nil,
+        "and a row that is no link does not, whatever its element has")
+    Check(odd ~= nil and odd.url == nil, "nor a link whose address is not text")
+    local opened, went = {}, {}
+    rxp.comms = { OpenLink = function(url) opened[#opened + 1] = url end }
+    rxp.SetStep = function(n) went[#went + 1] = n end
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#opened == 1 and opened[1] == "https://youtu.be/abc" and #went == 0, "a click opens it, with no shift, and skips nothing")
+    local ns = w.ns
+    ns.SetRXPWindowOption("rxpWindowSkip", "click")
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#opened == 2 and #went == 0, "also where a plain click skips a step: the link is the row's")
+    ns.SetRXPWindowOption("rxpWindowSkip", "shift")
+    w.shift = true
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#opened == 2 and #went == 1 and went[1] == 37, "with shift it is the skip, as everywhere in the step")
+    w.shift = false
+    link.scripts.OnClick(link, "RightButton")
+    Check(#opened == 2 and w.menus == 1, "and a right click is the menu")
+    plain.scripts.OnClick(plain, "LeftButton")
+    Check(#opened == 2 and #went == 1, "a row with no link does what it did")
+    ns.SetRXPWindowOption("rxpWindowSkip", "click")
+    plain.scripts.OnClick(plain, "LeftButton")
+    Check(#opened == 2 and #went == 2 and went[2] == 37, "also where a plain click skips: the row of no link skips the step")
+    ns.SetRXPWindowOption("rxpWindowSkip", "shift")
+
+    w.env.GameTooltip.lines = nil
+    link.scripts.OnEnter(link)
+    Check(w.env.GameTooltip.owner == link and w.env.GameTooltip.lines[1] == "https://youtu.be/abc",
+        "the tooltip of a link is its address")
+    w.env.GameTooltip.owner = nil
+    ns.SetRXPWindowOption("rxpWindowTips", false)
+    link.scripts.OnEnter(link)
+    Check(w.env.GameTooltip.owner == nil, "and Show Tooltips turns it off")
+    ns.SetRXPWindowOption("rxpWindowTips", true)
+
+    -- RestedXP before it had OpenLink: its own popup, with the address where its popup reads it
+    rxp.comms = nil
+    local popup
+    w.env.StaticPopup_Show = function(name) popup = { name = name, url = rxp.url } end
+    link.scripts.OnClick(link, "LeftButton")
+    Check(popup and popup.name == "RXP_Link" and popup.url == "https://youtu.be/abc" and rxp.url == nil,
+        "without OpenLink: its popup, and the address is not left behind")
+    w.env.StaticPopup_Show = nil
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#w.reported == 0, "and with no popup either nothing happens, and nothing is reported")
+    rxp.comms = { OpenLink = function() error("open") end }
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#w.reported == 1 and w.reported[1]:find("open", 1, true), "a link that raises is reported and not raised")
 end
 
 -- a click on the step skips it, and a click on a step of the list goes to it, with shift to start

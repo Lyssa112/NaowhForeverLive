@@ -344,6 +344,11 @@ Core/Integrations/RestedXP/
   until one is picked), the window is shown as that: "No guide selected" and a line, Pick a guide, which
   opens RestedXP's list of guides (`v2:ShowGuideSelectionMenu`, the one its welcome window opens on a right
   click, or its menu when it has none) with a plain click: there is nothing to skip, so it takes no shift.
+- A row of a link element (RestedXP's `.link`, such as a video guide) opens the link with a plain left click, as
+  RestedXP's own window does, through `comms.OpenLink` (its popup to copy the address from) or, before RestedXP had
+  that, `RXP.url` and its `RXP_Link` popup, and its tooltip is the address. Shift is still the skip, and a right
+  click the menu. The row has the address by `WindowModel` only when the element's tag is `link`, and the rows
+  are pooled, so each draw sets it again.
 - The title is the guide's group (`subgroup`, "Speedrun Guide 30-40") when RestedXP has one and no `title`,
   and the guide within it ("35-37 Northern Stranglethorn", `GetGuideName`) is then a muted line under it,
   as RestedXP's own windows show both. A name the same as the group, or none, leaves the title alone. The
