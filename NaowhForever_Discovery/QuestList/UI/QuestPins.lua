@@ -37,7 +37,7 @@ local REPUTATION_RGB = { r = 0.5, g = 0.75, b = 1 }
 local XP_SEP = "   "
 local GAINS_XP, GAINS_MONEY, GAINS_REPUTATION = 1, 2, 3
 local XP_FULL_LEVELS = 5
-local XP_TENTHS, XP_TENTHS_LOST_PER_LEVEL, XP_MIN_TENTHS = 10, 2, 1
+local XP_TENTHS, XP_TENTHS_LOST_PER_LEVEL, XP_MIN_TENTHS = 10, 2, 5
 local XP_ROUNDING = { { 100, 5 }, { 500, 10 }, { 1000, 25 } }
 local XP_ROUNDING_TOP = 50
 
@@ -189,6 +189,11 @@ local function Redraw()
     if added and WorldMapFrame:IsShown() then provider:RefreshAllData() end
 end
 
+local function OnQuestEvent()
+    Q.Stale()
+    Redraw()
+end
+
 local function HideButton(root, id)
     root:CreateButton(TEXT_HIDE:format(Q.Title(id) or id), function() Q.SetHidden(id, true) end)
 end
@@ -271,7 +276,7 @@ function provider:RefreshAllData()
     self:RemoveAllData()
     if not On() then return end
     local map = self:GetMap()
-    Q.Refresh()
+    Q.Update()
     for _, mapID in ipairs(OpenMap.Maps(map)) do
         for _, giver in ipairs(Q.Givers(mapID, S.Get("mapGrey"), S.Get("mapChainsOnly"))) do
             local x, y = OpenMap.Spot(map, mapID, giver.x / PERCENT, giver.y / PERCENT)
@@ -288,7 +293,7 @@ local function Apply()
         end
         if not events then
             events = CreateFrame("Frame")
-            events:SetScript("OnEvent", Redraw)
+            events:SetScript("OnEvent", OnQuestEvent)
         end
         for _, event in ipairs(EVENTS) do events:RegisterEvent(event) end
     elseif events then

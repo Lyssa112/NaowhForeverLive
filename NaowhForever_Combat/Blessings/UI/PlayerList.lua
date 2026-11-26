@@ -1,4 +1,4 @@
--- PlayerList.lua: a class's player list above the bar, to bless one person or give them their own blessing.
+-- PlayerList.lua: a class's player list beside the bar, to bless one person or give them their own blessing.
 local ns = _G.NaowhForever
 
 local B = ns.Blessings
@@ -13,18 +13,26 @@ local NAME_SIZE, NOTE_SIZE, TITLE_SIZE = 12, 10, 12
 local NAME_X, NAME_Y, NOTE_Y = 4, -2, -1
 local SLOT, SLOT_X = 26, -2
 local LIST_W, LIST_ROOM, LIST_GAP, LIST_ALPHA = 242, 30, 18, 0.9
+local LIST_STRATA = "DIALOG"
+local SIDES = {
+    TOP = { "BOTTOMLEFT", "TOPLEFT", 0, LIST_GAP },
+    BOTTOM = { "TOPLEFT", "BOTTOMLEFT", 0, -LIST_GAP },
+    LEFT = { "TOPRIGHT", "TOPLEFT", -LIST_GAP, 0 },
+    RIGHT = { "TOPLEFT", "TOPRIGHT", LIST_GAP, 0 },
+}
 local TITLE_X, TITLE_Y = 8, -6
 local CLOSE_SIZE, CLOSE_INSET = 18, -4
 local NOBODY = B.NOBODY
 local ROW_NAME = "NaowhForeverBlessRow"
 local TEXT_DEFAULT = ns.L("Class default")
 local TEXT_BLESS = ns.L("Bless")
-local TEXT_BLESS_TIP = ns.L("Left-click: cast this player's blessing.\nRight-click: give "
-    .. "them their own blessing, or back to the class default.\nCtrl-click: toggle Main Tank in a raid.")
+local TEXT_BLESS_TIP = ns.L("Left-click: cast this player's blessing.\nShift-click: its Greater Blessing, "
+    .. "which their whole class gets.\nRight-click: give them their own blessing, or back to the class "
+    .. "default.\nCtrl-click: toggle Main Tank in a raid.")
 local TEXT_AFTER_COMBAT = ns.L("The player list opens after combat.")
 local TEXT_CLOSE = "X"
 
-local flyout, rows, flyoutClass
+local flyout, rows, flyoutClass, flyoutSide
 local members = {}
 
 local function PlayerMenu(owner, member)
@@ -54,11 +62,14 @@ local function NewRow(index)
     Look.Icon(row.slot)
     row.header, row.cast = B.Recipient(row.slot, ROW_NAME .. index)
     B.SizeRecipient(row.header, row.cast, SLOT)
+    row.cast:SetAttribute("shift-type1", "spell")
     row.cast:SetAttribute("ctrl-type1", "maintank")
     row.cast:SetAttribute("ctrl-action1", "toggle")
     row.cast:SetScript("PostClick", function(self, button, down)
         if button == "RightButton" and not down and row.member then PlayerMenu(self, row.member) end
-        if button == "LeftButton" then B.NoteCast(self:GetAttribute("unit"), self:GetAttribute("spell1")) end
+        if button == "LeftButton" then
+            B.NoteCast(self:GetAttribute("unit"), self:GetAttribute(IsShiftKeyDown() and "shift-spell1" or "spell1"))
+        end
     end)
     ns.Tooltip(row.cast, TEXT_BLESS, TEXT_BLESS_TIP)
     B.Watch(row.slot)
@@ -78,7 +89,9 @@ local function PaintRow(row, member, store)
     row.note:SetText(own and SpellName(own) or TEXT_DEFAULT)
     row.slot.icon:SetTexture(key and SpellIcon(key) or QUESTION)
     B.SetNames(row.header, member.names)
-    row.cast:SetAttribute("spell1", key and HighestKnown(BY_KEY[key].ranks))
+    local single = key and HighestKnown(BY_KEY[key].ranks)
+    row.cast:SetAttribute("spell1", single)
+    row.cast:SetAttribute("shift-spell1", key and B.CanCastGreater() and HighestKnown(BY_KEY[key].greater) or single)
     B.SetWatch(row.slot, member.unit, key)
     local has, remaining
     if key then has, remaining = BuffState(member.unit, key) end
@@ -98,7 +111,8 @@ end
 
 function PlayerList.Build(bar)
     flyout = CreateFrame("Frame", nil, bar)
-    flyout:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, LIST_GAP)
+    flyout:SetFrameStrata(LIST_STRATA)
+    flyout:SetClampedToScreen(true)
     ns.Solid(flyout, "BACKGROUND", T.bg, LIST_ALPHA):SetAllPoints()
     ns.Border(flyout)
     flyout.title = ns.Font(flyout, TITLE_SIZE, "OUTLINE", T.accent)
@@ -118,6 +132,13 @@ function PlayerList.Arrange(roster)
     if not flyoutClass then
         flyout:Hide()
         return
+    end
+    local side = B.Settings.Get("blessListSide")
+    if side ~= flyoutSide then
+        local spot = SIDES[side]
+        flyout:ClearAllPoints()
+        flyout:SetPoint(spot[1], flyout:GetParent(), spot[2], spot[3], spot[4])
+        flyoutSide = side
     end
     local store = Store()
     flyout:Show()

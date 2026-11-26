@@ -56,6 +56,7 @@ local function Drop(list, drop)
 end
 
 local function Trim(data)
+    for i = 1, #data.at do data.who[i] = data.who[i] or "" end
     local drop = #data.at - C.LEDGER_KEEP
     if drop > 0 then
         for _, column in ipairs(COLUMNS) do Drop(data[column], drop) end
@@ -71,7 +72,8 @@ local function Add(kind, item, qty, amount, who)
     local data = Data(true)
     local n = #data.at + 1
     data.at[n], data.kind[n], data.item[n] = time(), kind, item or 0
-    data.qty[n], data.amount[n], data.who[n] = qty or 0, amount, who or ""
+    data.qty[n], data.amount[n], data.who[n] = qty or 0, amount,
+        who and not (issecretvalue and issecretvalue(who)) and who or ""
     if Ledger.onChange then Ledger.onChange() end
 end
 
@@ -370,6 +372,16 @@ local function Apply()
     for event in pairs(OPENS) do events:RegisterEvent(event) end
     for event in pairs(CLOSES) do events:RegisterEvent(event) end
     Start()
+end
+
+function Ledger.MailKind(index)
+    local _, _, _, subject = GetInboxHeaderInfo(index)
+    local invoice = GetInboxInvoiceInfo(index)
+    if invoice == SALE_INVOICE or Subject(subject, "sold") then return "sold" end
+    if invoice == BUY_INVOICE then return "bought" end
+    if Subject(subject, "expired") then return "expired" end
+    if Subject(subject, "cancelled") then return "cancelled" end
+    if Subject(subject, "outbid") then return "outbid" end
 end
 
 function Ledger.View(kind, amount)

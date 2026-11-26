@@ -568,7 +568,8 @@ end
 local function SaveOwn(records, me)
     local now = time()
     local saved = records[me] or { ready = {} }
-    saved.name = UnitName("player")
+    local name, surname = UnitFullName("player")
+    saved.name = surname and surname ~= "" and name .. " " .. surname or name
     local any = false
     wipe(ownLeft)
     for _, cooldown in ipairs(D.PROFESSION_COOLDOWNS) do
@@ -675,7 +676,7 @@ end
 local function Has(family, buffs, warn)
     if family.weapons then return MissingSlot(family.weapons, warn, IMBUE) == nil end
     if family.target then return not EliteTarget() or TargetHas(family.spells) end
-    local aura = Find(buffs, family.spells, family.own)
+    local aura = Find(buffs, family.auras or family.spells, family.own)
         or family.custom and Named(buffs, C_Spell.GetSpellName(family.spells[1]))
     local duration = aura and not Secret(aura.duration) and aura.duration or nil
     return aura and Lasts(Left(aura), warn, duration), aura

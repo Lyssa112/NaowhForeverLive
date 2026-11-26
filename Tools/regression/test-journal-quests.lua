@@ -47,6 +47,7 @@ local function Data()
         QuestChainStarts = { [141] = { 1436, 56.3, 47.5, "Gryan Stoutmantle" } },
         QuestTurnIns = {},
         QuestClosedBy = {}, QuestClosedByNames = {},
+        QuestTips = {},
     }
 end
 
@@ -272,6 +273,15 @@ Case("only your faction's quests and your class's class quests", function()
     assert(EntryFor(Q, J, 600))
 end)
 
+Case("a quest for two classes is listed for either", function()
+    local Q, _, _, J = Fixture({ faction = "Horde", done = DEFIAS })
+    J.QuestData[1].quests[3].class = { "WARRIOR", "PALADIN" }
+    assert(EntryFor(Q, J, 600) == nil, "not for the mage")
+    assert(Q.ForClass(J.QuestData[1].quests[3].class, "PALADIN"), "a paladin's")
+    J.QuestData[1].quests[3].class = { "WARRIOR", "MAGE" }
+    assert(EntryFor(Q, J, 600), "a mage's")
+end)
+
 Case("a quest only some races can take is listed for those races", function()
     local Q, _, _, J = Fixture({ faction = "Horde", race = 5, done = DEFIAS })
     J.QuestData[1].quests[3].races = 162
@@ -411,6 +421,49 @@ Case("versions of one quest: one warning, and the others lost once one is taken"
     assert(#lines == 1 and lines[1]:find("versions", 1, true), lines[1])
     Q, q = LockFixture({ help = true, on = { 921 } })
     assert(Q.Kind(q[920]) == "lost" and Q.Kind(q[921]) == "active")
+end)
+
+Case("a quest's tip warns until it is handed in, with Quest Help on", function()
+    local tipped = { { 930, "Gems", 20, "B", true, "Here" } }
+    local function TipFixture(opts)
+        opts.extra = tipped
+        local Q, q, _, J = Fixture(opts)
+        J.QuestTips[930] = "Finish it before the last boss."
+        return Q, q
+    end
+    local Q, q = TipFixture({})
+    assert(#Q.Warnings(q[930], {}) == 0, "Quest Help off")
+    Q, q = TipFixture({ help = true })
+    local lines = Q.Warnings(q[930], {})
+    assert(#lines == 1 and lines[1] == "Finish it before the last boss.", lines[1])
+    Q, q = TipFixture({ help = true, on = { 930 } })
+    assert(#Q.Warnings(q[930], {}) == 1, "still shown in your log")
+    Q, q = TipFixture({ help = true, done = { 930 } })
+    assert(#Q.Warnings(q[930], {}) == 0, "handed in")
+end)
+
+Case("a chain step's tip shows on the quest while that step is the next one", function()
+    local chained = { { 914, "Leaders", 20, "B", true, "Here" } }
+    local function TipFixture(opts)
+        opts.extra = chained
+        local Q, q, _, J = Fixture(opts)
+        J.QuestTips[1489] = "A group quest."
+        J.QuestChainNames[1489] = "First Step"
+        return Q, q
+    end
+    local Q, q = TipFixture({ help = true })
+    local lines = Q.Warnings(q[914], {})
+    assert(#lines == 1 and lines[1] == "First Step: A group quest.", lines[1])
+    Q, q = TipFixture({ help = true, done = { 1489 } })
+    assert(#Q.Warnings(q[914], {}) == 0, "step done")
+end)
+
+Case("a step that can be any of several quests shows the tip of whichever has one", function()
+    local Q, q, _, J = Fixture({ help = true, extra = { { 914, "Leaders", 20, "B", true, "Here" } }, done = { 1489 } })
+    J.QuestTips[1491] = "A group quest."
+    J.QuestChainNames[1491] = "Second Step"
+    local lines = Q.Warnings(q[914], {})
+    assert(#lines == 1 and lines[1] == "Second Step: A group quest.", lines[1])
 end)
 
 -------------------------------------------------------------------------------
@@ -738,6 +791,13 @@ Case("the generated quest and chain data is well formed and free of loops", func
     local bandanas = J.QuestPrereqs[214]
     assert(bandanas and bandanas[1] == 65 and #bandanas == 6, "Red Silk Bandanas starts with 65, 6 steps")
     assert(J.QuestMinLevel[214] == 14)
+    -- Where Wowhead's Series falls short, Forever's own quest data fills the chain in.
+    local tome = J.QuestPrereqs[1654]
+    assert(tome and tome[1] == 1649 and tome[2] == 1650 and tome[3] == 1651,
+        "The Test of Righteousness starts with The Tome of Valor, 1649 then 1650")
+    local flame = J.QuestPrereqs[4024]
+    assert(flame and flame[1] == 3441 and flame[2] == 3442 and flame[7] == 3462 and #flame == 10,
+        "A Taste of Flame starts with Divine Retribution and its steps")
     -- Old Ironforge Incursion needs Underground Map, which an item Captain Beld drops begins.
     assert(J.QuestChainStarts[96391], "Underground Map has no start")
     assert(lists > 50, "only " .. lists .. " lists")
@@ -838,6 +898,39 @@ Case("the generated quest rewards are for listed quests, each item a choice or a
     local vorrel = J.QuestRewards[1051]
     assert(#vorrel.choose == 2 and vorrel.get[1] == 7751, "Vorrel's Revenge rewards")
     assert(#J.QuestRewards[1486].choose == 2 and J.QuestRewards[1486].get == nil, "Deviate Hides rewards")
+end)
+
+Case("every quest tip is on a listed quest or a step of one's chain", function()
+    local J = {}
+    local env = setmetatable({ _G = { NaowhForever = { L = dofile("Tools/regression/locale_stub.lua").L, Journal = J } } },
+        { __index = _G })
+    for _, path in ipairs({ "NaowhForever_DungeonJournal/Data/Quests.lua", "NaowhForever_DungeonJournal/Data/QuestChains.lua",
+        "NaowhForever_DungeonJournal/Data/QuestTips.lua" }) do
+        local chunk = assert(loadfile(path))
+        setfenv(chunk, env)
+        chunk()
+    end
+    local reached = {}
+    local function Reach(list)
+        for _, step in ipairs(list or {}) do
+            for _, id in ipairs(type(step) == "table" and step or { step }) do reached[id] = true end
+        end
+    end
+    for _, dungeon in ipairs(J.QuestData) do
+        for _, quest in ipairs(dungeon.quests) do
+            reached[quest[1]] = true
+            Reach(J.QuestPrereqs[quest[1]])
+            Reach(J.QuestChains[quest[1]])
+        end
+    end
+    local tips = 0
+    for id, tip in pairs(J.QuestTips) do
+        tips = tips + 1
+        assert(reached[id], "a tip for a quest the Journal never shows: " .. id)
+        assert(type(tip) == "string" and tip:find("^%u") and tip:find("%.$"), "tip " .. id .. " is not one sentence")
+        assert(not tip:find("[\128-\255]"), "tip " .. id .. " is not ASCII")
+    end
+    assert(tips > 0 and J.QuestTips[2201]:find("last boss", 1, true), "Find the Gems' tip")
 end)
 
 print(("test-journal-quests: %d cases passed"):format(count))

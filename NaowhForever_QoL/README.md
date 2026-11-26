@@ -40,7 +40,7 @@ NaowhForever_QoL/
     SpellEfficiencyReport.lua  the Mana Efficiency window (ns.OpenSpellEfficiencyReport, /nf efficiency): every rank of your mana spells
     GlobalCopy.lua      /copy, and tooltip IDs with their copy shortcut (the card is Shared/UI/CopyCard.lua)
     HideClutter.lua     UI Clutter
-    UnitNames.lua       Names Over Heads: guild names, guild titles and player titles with player names
+    UnitNames.lua       Names Over Heads: guild names, guild titles, player titles, and pet, guardian and totem names
     HDR.lua             HDR: the game's HDR and Peak Brightness
     ConsoleVariables.lua  Console Variables: every console variable with its value and default in a window
                         (ns.OpenConsoleVariables), to change, export and import (ns.ImportConsoleVariables),
@@ -98,6 +98,7 @@ NaowhForever_QoL/
     GroupButtons.lua    On-Screen Buttons (Invite, your invite buttons, Invite All, Disband)
     FreeForAll.lua      Always Free for All, the party loot method while you lead
     LayerSwap.lua       Auto-Accept Layer Swap, confirming the game's layer swap prompt on joining a group
+    WhisperInvite.lua   Whisper Invite, inviting players who whisper you one of your words
     QuestProgress.lua   Announce Quest Progress, your quest objective updates said in party chat
     QuestLinks.lua      Quest Levels in Chat, the level on quest links said in chat
     QuestItems.lua      Quest Item Info, the quests an item is for on its tooltip, learned from your quest log
@@ -400,6 +401,10 @@ NaowhForever_QoL/
 - Names Over Heads writes the game's own `UnitNamePlayerGuild`, `UnitNameGuildTitle` and
   `UnitNamePlayerPVPTitle` and keeps nothing: the game saves them. Forever's options have no box for
   them (only your own, NPC and player names), and a row shows only where the client has its setting.
+  The friendly and enemy pet, guardian and totem names (`UnitNameFriendlyPetName` and its five
+  siblings) go back on at every login, so a value set from the card is kept in the account store
+  and put back once per session, at the first apply. A change made elsewhere in a session stands
+  until the next login. Nothing is kept until a player changes one.
 - In-game cinematics carry no ID, so one is known by the zone and subzone it plays in. Skipping
   one waits a frame so CinematicFrame has taken the start before it is cancelled.
 - Finishing a movie shows UIParent again, which combat lockdown would block, so a movie is never
@@ -508,6 +513,18 @@ NaowhForever_QoL/
   bags you are looking at.
 - Auction Prices keeps one price table per auction house (realm and faction), as prices differ;
   the key is worked out once because it is read on every item tooltip.
+- Random-suffix gear ("of the Bear") also keeps a price per variant: `house.suffixes`, item ID to the
+  variant's full name to its lowest buyout, with `house.suffixSeen` dating the ones seen since the last
+  scan as `house.seen` does. `ns.AuctionPrice(itemID, link)` answers a link whose suffix field is not 0
+  with its variant's price before anything else, TSM and Auctionator included, since theirs is the
+  item's; a variant never seen falls back to the item's price, the cheapest variant. Only weapons and
+  armour are checked in a fast scan, and only their rows ask for a link (`GetReplicateItemLink`).
+- The variant is keyed by its full name, as the link's brackets and `GetItemKeyInfo`'s `itemName` both
+  give it, because the link's suffix ID and the item key's `itemSuffix` are not documented to be the same
+  number. Unverified in game: that `itemName` carries the suffix on Forever; if it does not, browse and
+  search sightings simply never match a link and the fast scan's prices still do.
+- A full or page by page scan replaces the variants with its own, as it does the prices. The release's
+  prices are per item only, so they never price a variant: the feed would need a variant table of its own.
 - The house is the one you are at: your faction's, or the realm's Blackwater house (`Realm-Blackwater`)
   while the auction house is open at an auctioneer of neither faction. So a scan in Booty Bay is kept as
   Blackwater's and never overwrites your faction's prices, and closing the auction house goes back to
@@ -528,9 +545,11 @@ NaowhForever_QoL/
   side's decoded houses go never drops the other's, or two prices on one tooltip would decode a house
   again on every hover.
 - Every release carries every Forever auction house's prices of its hour (`NaowhForever_AuctionData`),
-  so tooltips, Waylaid Crates and Professions have prices before you ever scan. They load the first
-  time something asks for a price; only your region's houses of your faction and its Blackwater houses
-  are kept after that.
+  so tooltips, Waylaid Crates and Professions have prices before you ever scan. They load at login,
+  behind the loading screen, when a tooltip price, Bag Space's auction value or the Loot Feed's scanned
+  price is on, and otherwise the first time something asks for a price: loading and finding your house
+  is a hitch, and in the open world it landed on the first item hovered or looted. Only your region's
+  houses of your faction and its Blackwater houses are kept after that.
 - Blizzard's data does not say which of your faction's houses is yours, so the house is the one
   with the most items within 1% of your own last scan (at least 20). A new scan of your own looks
   again. A price then comes from your scan or that house, whichever is newer. Until a house is
@@ -542,6 +561,12 @@ NaowhForever_QoL/
   `ns.AuctionPrice` share one lookup, so the count is always from where the price came from, and a thin
   market can be told apart from a liquid one. A scan from before the counts
   has none, and reads as unknown.
+- A fast scan also keeps each item's median price (`house.medians`, dated by `house.medianTime`): the price
+  of the middle one of everything listed with a buyout, weighted by quantity, so one cheap single does not
+  move it. The release's prices carry one too, as a fourth field. A page by page scan has only each item's
+  lowest, so it leaves the last medians in place. `ns.AuctionMedianList` answers with the release's or
+  yours, whichever `ns.AuctionPriceList` would put first, for The Market's price history only; tooltips,
+  Sell and everything else still read the lowest.
 - Scans are stamped with `GetServerTime()`, as the release's prices carry Blizzard's time
   (Last-Modified), so a PC clock that is off still puts the newer one first.
 - Prices are also kept as you go (`AuctionSeen.lua`): whenever the game has already sent listings, the item's
@@ -572,7 +597,7 @@ NaowhForever_QoL/
   your own price here cannot chase itself down.
 - One event is one batch: every row is written straight into the table, and the others hear once at its end,
   only when something changed (`ns.AuctionSeenDone`): `ns.MarketPricesSeen` with the item IDs, for The
-  Market's price history, Bag Worth, Crafts and Farm, and `ns.AuctionPricesChanged` for Prices for Other
+  Market's Bag Worth, Crafts and Farm, and `ns.AuctionPricesChanged` for Prices for Other
   Addons. No window is redrawn and no Watch List line printed; those follow a full scan.
 - A post is noted from post-hooks on `C_AuctionHouse.PostItem` and `PostCommodity` (the item from its
   location, the buyout or unit price), which cover Blizzard's Sell tab and The Market's alike, and written on
@@ -698,9 +723,9 @@ NaowhForever_QoL/
   window instead and keeps Blizzard's hidden or shrunk away; a scan behind it would spend the 15-minute fast
   scan its own scans want and replace its searches.
 - Age is whole days since the price's scan or the release's prices, never below 0 (the release's time can
-  run a little ahead of the realm's clock), and nil past 21 days, as Auctionator's is. A price is per item
-  ID, so a link's price ignores a random suffix ("of the Bear"); for that reason a weapon or armour link is
-  never exact, while any other priced item is.
+  run a little ahead of the realm's clock), and nil past 21 days, as Auctionator's is. A link with a
+  random suffix ("of the Bear") gets its variant's price when one is known; a weapon or armour link is exact
+  only then, since otherwise its price is the item's cheapest variant, while any other priced item is.
 - Other addons can ask for a price during their own load, before the player's faction is known, so
   `House()` remembers its key only once the faction is there; until then it uses the realm-only key, as
   before, without remembering it.
@@ -709,8 +734,7 @@ NaowhForever_QoL/
   price is Professions' expected disenchant value before the auction house cut (`DisenchantValues.Expected`).
 - `RegisterForDBUpdate` callbacks run when a scan finishes and its prices are saved (`ns.AuctionPricesChanged`,
   from Auction Prices), and only while the global is ours. Each runs through `xpcall` with the game's error
-  handler, so another addon's broken callback is reported as its own and the rest still run. The release's prices loading is not an update: they load on the first
-  price asked for, inside that call.
+  handler, so another addon's broken callback is reported as its own and the rest still run. The release's prices loading is not an update: they load at login or inside the first price call.
 - The GCD Tracker reads only the player's own casts, and those are never secret.
 - Forever has no dedicated global cooldown spell, so the GCD Tracker watches one baseline spell
   per class with no cooldown of its own (`GCD_SPELLS`): any cooldown it shows is the global
@@ -794,15 +818,18 @@ NaowhForever_QoL/
   is skipped, and a row or tooltip whose zone or size is secret shows none.
 - Group Finder Roles never writes the Group Finder's results or calls its refresh: its list, totals,
   selection and right-click menu stay Blizzard's own, untainted. It hooks
-  `LFGBrowseSearchEntry_Update` (after `Blizzard_GroupFinder_VanillaStyle` loads) and fades a row
-  that does not match to alpha 0 with its mouse off, so a hidden row keeps its place and the list
-  can show gaps; Blizzard's sort puts solo players by tank, healer, then damage and groups with
-  room for your own roles first, so matches mostly sit together at the top. A pick change repaints
+  `LFGBrowseSearchEntry_Update` (after `Blizzard_GroupFinder_VanillaStyle` loads) and hides a row
+  that does not match, so a hidden row keeps its place and the list can show gaps. It hides rather
+  than fades because the Group Finder module's row hook sets the same rows' alpha on every redraw
+  for its own dimming, which brought faded rows back. A row Blizzard hid itself because its result
+  is gone is never shown again when the picks change. Blizzard's sort puts solo players by tank,
+  healer, then damage and groups with room for your own roles first, so matches mostly sit
+  together at the top. A pick change repaints
   the rows on screen. A solo lister's roles are the `lfgRoles` they signed up with; a group has
   only each member's assigned role, which says nothing about who you can invite, so the player
   buttons match solo listers only. The Groups need buttons read `GetSearchResultMemberCounts`'
   `*_REMAINING` counts, the open spots Blizzard's own sort uses, and match groups only. Your own
-  listing always stays. When every listing is faded, a line where the game's "No results" sits
+  listing always stays. When every listing is hidden, a line where the game's "No results" sits
   says the picks did it. The search results are secret in chat messaging lockdown
   (`SecretInChatMessagingLockdown`), so while `C_ChatInfo.InChatMessagingLockdown()` is true
   nothing is filtered.
@@ -1025,6 +1052,10 @@ NaowhForever_QoL/
 - Bag Space reads each slot through one reused item location (`C_Item.IsLocked`, `GetStackCount`,
   `GetItemQuality`, `GetItemIcon`) into one reused table, not `C_Container.GetContainerItemInfo`, which
   builds a new table per slot: with full bags, the scan after every craft made about 50 KB of garbage.
+- Bag Space prices each item once per scan, not once per stack: a bag of one item in many stacks
+  asked Auction Prices the same question for each. The prices it keeps last the frame of the scan
+  (`GetTime()`), so they never outlive it, and live in a `do` block because the file is at Lua 5.1's
+  limit of 200 locals in one chunk.
 - Never offered, whatever they are worth: reagents (class reagents such as Flash Powder and
   candles), projectiles, quivers, quest items and keys (item classes 5, 6, 11, 12 and 13), items
   in an equipment set, BiS items, fishing poles (weapon subclass 20) and profession tools. You need
@@ -1113,20 +1144,28 @@ NaowhForever_QoL/
   on, and anything on this feature's ignore list. Bags, consumables, reagents, trade goods,
   miscellaneous items and unbound gear are offered when their quality is on and they have a
   vendor price. Consumables
-  starts on and also offers ones a vendor will not buy. All Items starts off. While it is on,
-  every item in your bags is offered except ones on this ignore list. An item whose price is not
+  starts on and also offers ones a vendor will not buy. All Items starts off. While it is on, the
+  quality switches and the vendor-price rule are skipped and profession bags are scanned too. Every
+  other item left out above stays left out, and so does anything on this ignore list. Keep Items
+  Worth More Than, on the Bag Clean-up card, also keeps a stack whose value, the one the list is
+  sorted by, is above it. All Items skips that limit too. An item whose price is not
   loaded yet is asked for once and added when it arrives. Bag Space does not have to be on.
   Nothing is destroyed on its own.
 - Every quality, including poor and common, asks for a second click on that same button. The
   first click prepares the delete and the button names that item ("Click again to destroy"
-  plus its link). A different item, or moving to another one, clears that confirmation. The
+  plus its link). That confirmation is for that slot, item, stack size and link, against the loot
+  shown, on that button. A different item, paging either card, a stack or link that changed, or
+  the other button (Destroy Anyway after Destroy, or the reverse) clears it. The
   second click is the one the game accepts: on this
   client `DeleteCursorItem` only runs from that hardware click, and a later confirm button cannot
   run it. If the game still opens its own delete window, it is left for the player and never
   accepted or typed for here. If the delete does not take and no window is open, the item is put
   back in its slot, so it is not left on the cursor. The addon says it was destroyed only after a
-  bag update shows that stack gone and the count dropped by that stack. The slot is read again at
-  the click. If it changed, nothing is deleted.
+  bag update shows that stack gone and the count dropped by that stack. At the second click the
+  slot is read again with live settings: the item, its link and stack, a plain bag unless All
+  Items is on, every item left out above, the quality and vendor-price rules, the vendor price
+  shown, and Keep Items Worth More Than. If any of it changed, nothing is deleted and the list is
+  rebuilt.
 - After the stack is gone, the loot is taken only when its window is still open, the slot still
   has the item, and the player is out of combat. Otherwise the message says to loot it again. A
   bank, mail, trade, vendor or quest window says "Loot it again after making room." on the
@@ -1855,6 +1894,8 @@ NaowhForever_QoL/
 - `UPDATE_FACTION`, `CURRENCY_DISPLAY_UPDATE` and the bag events are folded into one redraw on the next frame. A kill can send several of them at once.
 - An item the client has not loaded shows the shared unloaded name until its data arrives (`Items.OnLoaded`), then redraws.
 - Close hides the window until the next login or reload, or until the switch is turned off and on again. Unlock Mode still shows it.
+- Lock Window (`watchListLock`) stops the title and body drags; Unlock Mode's mover still moves it, so a locked window can be placed without turning the lock off.
+- Progress Bars (`watchListBars`, off by default) puts a bar under each reputation (the standing's progress in its colour, full at Exalted) and under each currency with a cap. Items and uncapped currencies have no bar.
 - The standing colours are the Dungeon Journal's, moved into `Shared/Style.lua` (`STANDING_RGB`) so both read one copy.
 
 ### Always Free for All
@@ -1948,6 +1989,10 @@ NaowhForever_QoL/
   it on or off. While Glimmer is on, the cog ignores its nameplate's scale and is drawn `COG_SIZE`
   wide at the UI's scale, and is given back when the soft target or its nameplate changes or Glimmer
   is turned off. A scale on an unprotected frame is allowed in combat, so it holds there too.
+- Hide Icon Above Objects fades the cog's `SoftTargetFrame` to alpha 0 instead of turning
+  `SoftTargetIconGameObject` off, which would take the nameplate and the effect with it. The game
+  only shows and hides the frame's `Icon`, never the frame's alpha, so the fade holds; the alpha is
+  given back with the scale, since nameplate frames are reused.
 - The nameplate is only opened for an object Glimmer lights (`onlyHighlighted`), so NPCs, mailboxes
   and doors do not grow a nameplate. Whether to open it does not need the nameplate: the object is
   read from the unit token, then the nameplate arrives with `NAME_PLATE_UNIT_ADDED`.

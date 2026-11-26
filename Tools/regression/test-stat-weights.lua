@@ -260,6 +260,12 @@ do
         and SW.KeyAmount("ITEM_MOD_DODGE_RATING_SHORT", 12) == 1 and SW.KeyAmount("ITEM_MOD_BLOCK_RATING_SHORT", 5) == 1
         and SW.KeyAmount("ITEM_MOD_AGILITY_SHORT", 7) == 7)
     check("KeyWorth reads the rating too", math.abs(SW.KeyWorth("ITEM_MOD_HIT_RATING_SHORT", 10, fury) - fury.hit) < 1e-9)
+    -- One school's damage is a stat of its own: Umbral Crystal against Skullspell Orb for a Demonology warlock.
+    local demo = { sta = 0.1, int = 0.158, shadow = 0.82 }
+    local crystal = SW.Worth({ ITEM_MOD_STAMINA_SHORT = 5, ITEM_MOD_SHADOW_DAMAGE_DONE_SHORT = 17 }, demo)
+    check("shadow damage is worth its weight", math.abs(crystal - 14.44) < 1e-9
+        and crystal > SW.Worth({ ITEM_MOD_INTELLECT_SHORT = 12 }, demo))
+    check("and KeyWorth reads it", math.abs(SW.KeyWorth("ITEM_MOD_FIRE_DAMAGE_DONE_SHORT", 10, { fire = 0.5 }) - 5) < 1e-9)
     -- Specs that play differently are weighed differently.
     local function Differ(a, b)
         local x, y = SW.Spec(a).weights, SW.Spec(b).weights
@@ -655,6 +661,20 @@ do
     check("a cloak asked as anyone's, not as cloth", asked == "ROGUE 4 0")
     ITEMS[1][1] = "INVTYPE_HAND"
     ns.ClassCanUse = nil
+    check("only your spec's line by default", #Lines(1) == 1)
+    S.Set("allSpecs", true)
+    lines = Lines(1)
+    check("All Specs: your spec's line first, then the class's others", #lines == 3
+        and lines[1]:find("Assassination", 1, true) and lines[2]:find("Combat", 1, true)
+        and lines[3]:find("Subtlety", 1, true))
+    ns.StatWeights.PickSpec("combat-rogue")
+    lines = Lines(1)
+    check("All Specs: a later spec of yours still comes first", #lines == 3
+        and lines[1]:find("Combat", 1, true) and lines[2]:find("Assassination", 1, true)
+        and lines[3]:find("Subtlety", 1, true))
+    ns.StatWeights.PickSpec(nil)
+    check("All Specs: still nothing on what is worse", #Lines(9) == 0)
+    S.Set("allSpecs", false)
     S.Set("enabled", false)
     check("the module off, no line", #Lines(1) == 0)
 end

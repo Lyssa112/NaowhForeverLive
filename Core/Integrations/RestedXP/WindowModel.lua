@@ -4,6 +4,7 @@ local Safe = ns.RXPSafe
 local Has, Dig, Run = Safe.Has, Safe.Dig, Safe.Run
 
 local ACTIVE_SHOWN = 3
+local LINK_TAG = "link"
 local PERCENT, ROUND = 100, 0.5
 local COUNT_PATTERN = "(%d+)%s*/%s*(%d+)"
 local LEAD_ICON, LEAD_PLAIN = "^%s*(|T[^|]*|t)%s*", "^|T([^|:]+):%d+|t$"
@@ -65,6 +66,11 @@ local function Lifted(shown, glyph)
     return (shown:gsub(LEAD_ICON, "", 1)), path and ("|T" .. path .. ":0|t") or lead, content and true or false
 end
 
+local function Linked(element)
+    local url = element.url
+    return element.tag == LINK_TAG and type(url) == "string" and url or nil
+end
+
 local function Row(rxp, element)
     local frame = element.frame
     local text = Dig(frame, "text")
@@ -86,7 +92,7 @@ local function Row(rxp, element)
     local done = Has(button, "GetChecked") and button:GetChecked() or element.completed or element.skip
     local have, need, bags = Counted(element, shown)
     return { text = shown, icon = glyph, done = done and true or false, button = button, source = text,
-        have = have, need = need, bags = bags, nested = nested, note = note }
+        have = have, need = need, bags = bags, nested = nested, note = note, url = Linked(element) }
 end
 
 local function ActiveSteps(rxp)

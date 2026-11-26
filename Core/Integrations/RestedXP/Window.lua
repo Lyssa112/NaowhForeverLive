@@ -18,9 +18,17 @@ local EDGE_SIDES = 2
 local HOVER_ALPHA, ICON_DONE_ALPHA = 0.25, 0.5
 local COUNT_MIN, COUNT_GAP = 2, 2
 local BAG_EVENT = "BAG_UPDATE_DELAYED"
+local RXP_ADDON = "RXPGuides"
+local V2_SWITCH = { "IsEnabled", "IsGuideWindowEnabled" }
+local WHY_OFF, WHY_CHANGED = "off", "changed"
+local TEXT_WHY = {
+    [WHY_OFF] = ns.L("RestedXP's V2 interface is off, so the Naowh window cannot show. Turn on Enable Beta Features and Enable V2 Interface in RestedXP's settings, then reload."),
+    [WHY_CHANGED] = ns.L("RestedXP changed the interface the Naowh window needs, so it cannot show. Check for an update of Naowh Forever."),
+}
 local SHADOW, SHADOW_ALPHA = 1, 0.9
 local TEXT_FOLD, TEXT_UNFOLD, TEXT_DOT = "-", "+", " \194\183 "
 local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
+local LOGO_FILTER = "TRILINEAR"
 local GRADIENT = ns.MEDIA .. "NaowhGradient.tga"
 local GRIP_UP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up"
 local GRIP_DOWN = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down"
@@ -38,6 +46,7 @@ local SCROLL_ROOM = SCROLL_W + SCROLL_GAP
 local HOME = { "LEFT", "LEFT", 0, 35 }
 local DRAG_BUTTON, TIP_ANCHOR = "LeftButton", "ANCHOR_TOP"
 local ACCENT = "accent"
+local LINK_POPUP = "RXP_Link"
 local TARGET_PLACEHOLDER, MOB_PLACEHOLDER = 2056011, 135274
 local PLACEHOLDER_GLYPHS = { [TARGET_PLACEHOLDER] = "gossip", [MOB_PLACEHOLDER] = "combat" }
 local OUTLINE_FLAGS = { outline = "OUTLINE", thick = "THICKOUTLINE", slug = "OUTLINE, SLUG" }
@@ -54,6 +63,7 @@ local placeholders = setmetatable({}, { __mode = "k" })
 local followed = setmetatable({}, { __mode = "k" })
 local targetingHooked
 local faced = {}
+local told = {}
 local Draw
 
 local function Settings()
@@ -186,6 +196,18 @@ local function PickGuide()
         Run("WindowPick", v2.ShowGuideSelectionMenu, v2)
     else
         Menu()
+    end
+end
+
+local function OpenLink(url)
+    local rxp = _G.RXP
+    local comms = Dig(rxp, "comms")
+    if Has(comms, "OpenLink") then
+        Run("WindowLink", comms.OpenLink, url)
+    elseif type(rxp) == "table" and type(_G.StaticPopup_Show) == "function" then
+        rxp.url = url
+        Run("WindowLink", _G.StaticPopup_Show, LINK_POPUP)
+        rxp.url = nil
     end
 end
 
@@ -402,6 +424,11 @@ local function StepClick(self, button)
     if MaySkip() then SkipStep(self.step) end
 end
 
+local function RowClick(self, button)
+    if self.url and button == "LeftButton" and not IsShiftKeyDown() then return OpenLink(self.url) end
+    StepClick(self, button)
+end
+
 local function Tip(owner, text, menu, plain)
     if not ns.RXPWindowOption("rxpWindowTips") or GameTooltip:IsForbidden() then return end
     local mode = ns.RXPWindowOption("rxpWindowSkip")
@@ -416,6 +443,13 @@ local function Tip(owner, text, menu, plain)
         if mode == "shift" then GameTooltip:AddLine(TEXT_SHIFT, TIP_DIM, TIP_DIM, TIP_DIM) end
         if menu then GameTooltip:AddLine(TEXT_MENU, TIP_DIM, TIP_DIM, TIP_DIM) end
     end
+    GameTooltip:Show()
+end
+
+local function LinkTip(row)
+    if not ns.RXPWindowOption("rxpWindowTips") or GameTooltip:IsForbidden() then return end
+    GameTooltip:SetOwner(row, TIP_ANCHOR)
+    GameTooltip:AddLine(row.url, 1, 1, 1, true)
     GameTooltip:Show()
 end
 
@@ -568,6 +602,13 @@ local function Build()
     return f
 end
 
+local function LogoPath()
+    local v2 = Dig(_G.RXP, "v2")
+    local theme = Has(v2, "GetTheme") and Run("WindowLogo", v2.GetTheme, v2)
+    local path = Dig(theme, "guideWindow", "logo")
+    return type(path) == "string" and path ~= "" and path or LOGO
+end
+
 local function MakeBox()
     local T = ns.THEME
     local box = CreateFrame("Button", nil, window)
@@ -581,7 +622,6 @@ local function MakeBox()
     box.edge = ns.Border(box)
     box.label = Text(box, "rxpWindowTextSize")
     box.logo = box:CreateTexture(nil, "OVERLAY")
-    box.logo:SetTexture(LOGO)
     return box
 end
 
@@ -605,8 +645,11 @@ local function MakeRow()
     row:SetScript("OnHyperlinkEnter", LinkEnter)
     row:SetScript("OnHyperlinkLeave", LinkLeave)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    row:SetScript("OnClick", StepClick)
-    row:SetScript("OnEnter", function(self) Tip(self.box or self, TEXT_SKIP, true) end)
+    row:SetScript("OnClick", RowClick)
+    row:SetScript("OnEnter", function(self)
+        if self.url then return LinkTip(self) end
+        Tip(self.box or self, TEXT_SKIP, true)
+    end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
     row.bar = ns.Solid(row, "ARTWORK", ns.THEME.accent, 1)
     row.icon = Text(row, ICON_SIZE, nil, true)
@@ -718,6 +761,7 @@ local function DrawRow(box, row, x, y, width, first)
     item:SetParent(box)
     item.box = box
     item.step = row.step
+    item.url = row.url
     item:ClearAllPoints()
     item:SetPoint("TOPLEFT", box, "TOPLEFT", x, y)
     item:SetWidth(width)
@@ -787,6 +831,11 @@ local function DrawBox(step, y, inner, current)
         box.logo:ClearAllPoints()
         box.logo:SetPoint("TOPRIGHT", box, "TOPRIGHT", -BOX_PAD, -BOX_PAD)
         box.logo:SetSize(LOGO_SIZE, LOGO_SIZE)
+        local path = LogoPath()
+        if box.logoPath ~= path then
+            box.logoPath = path
+            box.logo:SetTexture(path, nil, nil, LOGO_FILTER)
+        end
         box.logo:Show()
         head = math.max(size, LOGO_SIZE)
     else
@@ -981,7 +1030,17 @@ function Draw()
     window:SetShown(not guide or guide:IsShown())
 end
 
+local function Tell()
+    if not (ns.RXPWindowEnabled() and C_AddOns.IsAddOnLoaded(RXP_ADDON)) then return end
+    local why = ns.RXPWindowWhy()
+    if not why or told[why] then return end
+    if why == WHY_OFF and ns.RXPSetUpPending() then return end
+    told[why] = true
+    ns.Print(TEXT_WHY[why])
+end
+
 local function Apply()
+    Tell()
     local want = ns.RXPWindowEnabled() and ns.RXPThemesAvailable() and ns.RXPWindowReady()
     if want == active then
         if active then Refresh() end
@@ -1005,10 +1064,16 @@ local function Hook(owner, name)
     if Has(owner, name) then hooksecurefunc(owner, name, Rebuilt) end
 end
 
-function ns.RXPWindowReady()
+function ns.RXPWindowWhy()
     local v2 = Dig(_G.RXP, "v2")
-    local enabled = Has(v2, "IsEnabled") and v2.IsEnabled or Has(v2, "IsGuideWindowEnabled") and v2.IsGuideWindowEnabled
-    return enabled and enabled(v2) and true or false
+    for _, name in ipairs(V2_SWITCH) do
+        if Has(v2, name) then return not v2[name](v2) and WHY_OFF or nil end
+    end
+    return WHY_CHANGED
+end
+
+function ns.RXPWindowReady()
+    return ns.RXPWindowWhy() == nil
 end
 
 function ns.RXPWindowStart()

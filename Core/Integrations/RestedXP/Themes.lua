@@ -818,6 +818,10 @@ end
 
 local setUpGuid
 
+function ns.RXPSetUpPending()
+    return setUpGuid ~= nil
+end
+
 local function SetUpDone()
     local account = ns.AccountSettings()
     if type(account.rxpSetUp) ~= "table" then account.rxpSetUp = {} end

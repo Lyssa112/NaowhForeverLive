@@ -90,7 +90,13 @@ local METHODS = {
         frame.pointX = type(a) == "number" and a or type(b) == "number" and b or c
         frame.pointY = type(a) == "number" and b or c
     end,
-    IsVisible = function(frame) return rawget(frame, "shown") ~= false end,
+    IsVisible = function(frame)
+        repeat
+            if rawget(frame, "shown") == false then return false end
+            frame = rawget(frame, "parent")
+        until type(frame) ~= "table"
+        return true
+    end,
     Show = function(frame) frame.shown = true end,
     Hide = function(frame) frame.shown = false end,
     SetShown = function(frame, shown) frame.shown = shown and true or false end,
@@ -127,7 +133,10 @@ local METHODS = {
 Frame = function(state, parent)
     return setmetatable({ scripts = {}, events = {}, state = state, parent = parent }, { __index = function(_, key)
         if key == "HookScript" then
-            return function(_, script) state.hooks[#state.hooks + 1] = script end
+            return function(frame, script, fn)
+                state.hooks[#state.hooks + 1] = script
+                if frame == state.worldMap then state.hooked[script] = fn end
+            end
         end
         if METHODS[key] then return METHODS[key] end
         local measure = MEASURE_METHODS[key]
@@ -150,7 +159,7 @@ local function fixture(settings, noBis, language)
     local state = {
         level = 20, instance = nil, combat = false, bisList = true,
         hooks = {}, frames = 0, printed = {}, waypoints = {}, mapOpened = nil, requested = {},
-        refreshes = 0, made = {}, logged = {}, watched = {}, objectives = {}, account = {}, guid = "Player-4613-006EB819", now = 1000, clock = 50,
+        refreshes = 0, made = {}, hooked = {}, logged = {}, watched = {}, objectives = {}, account = {}, guid = "Player-4613-006EB819", now = 1000, clock = 50,
         bis = {}, worn = {}, owned = {}, names = {}, sources = {}, looks = {},
         log = {}, repQuests = {}, readyQuests = {},
         sent = {}, timers = {}, pushed = {}, fonts = {}, atlases = {}, dressable = {}, hasLook = {}, buttons = {},
@@ -175,7 +184,7 @@ local function fixture(settings, noBis, language)
         showAlliance = true, showHorde = true, showKills = true, shareRequests = true,
         showAppearance = false, showTips = true, missingBisOnly = false, myRecipes = true, showCosmetic = true,
         repQuestsOpen = true, bossTipOpen = true, bossQuestsOpen = true, bossAbilitiesOpen = true,
-        showKeys = true, questHelp = false,
+        showKeys = true, questHelp = false, lootMinLevel = 0, lootMaxLevel = 0,
     }
     for k, v in pairs(settings or {}) do values[k] = v end
     -- The kit's module settings: Set tells every listener, as UI.ModuleSettings does.
@@ -235,6 +244,7 @@ local function fixture(settings, noBis, language)
             return font
         end,
         Solid = function(parent) return Frame(state, parent) end,
+        ThemeAlpha = function() return 1 end,
         -- As ns.Hairline and ns.PixelInset: whole-pixel sizing has no effect on these stubs.
         Hairline = function(region) return region end,
         PixelInset = function(region) return region end,
@@ -256,6 +266,7 @@ local function fixture(settings, noBis, language)
         OpenBisWindow = function() state.bisOpened = true end,
         SetButtonText = function() end,
         Tooltip = function() end,
+        NewEditBox = function(parent) return Frame(state, parent) end,
         ThemeTint = function() return WHITE end,
         NewSearchBox = function(parent, _, onSearch)
             local box = Frame(state, parent)
@@ -323,8 +334,14 @@ local function fixture(settings, noBis, language)
             local i = state.instance or {}
             return i.name, nil, nil, nil, nil, nil, nil, i.id
         end,
-        -- Only a language other than English asks; English has none to answer with.
-        GetRealZoneText = function(id) return language.instances[id] or ("Mapa " .. id) end,
+        -- In English only the rank page asks, for its Marks of Honor's battlegrounds.
+        GetRealZoneText = function(id)
+            if not language then
+                return ({ [30] = "Alterac Valley", [489] = "Warsong Gulch", [529] = "Arathi Basin",
+                    [2997] = "Darkspear Islands" })[id]
+            end
+            return language.instances[id] or ("Mapa " .. id)
+        end,
         C_CreatureInfo = { GetCreatureTypeInfo = function(id)
             return { name = id == 7 and (language and "Humanoide" or "Humanoid") or "Type " .. id }
         end },
@@ -378,6 +395,7 @@ local function fixture(settings, noBis, language)
         UIParent = Frame(state),
         GameTooltip = state.tooltip,
         GameTooltip_Hide = function() end,
+        GameTooltip_SuppressAutomaticCompareItem = function(tip) tip.suppressAutomaticCompareItem = true end,
         -- A home group, not an instance one (the dungeon finder's).
         IsInGroup = function(category) return state.party ~= nil and category ~= 2 end,
         IsInRaid = function() return false end,
@@ -474,7 +492,7 @@ local function fixture(settings, noBis, language)
                 return state.mapInfo and state.mapInfo[map] or map == 52 and { name = "Westfall" } or nil
             end,
             GetBestMapForUnit = function() return state.standingOn end,
-            GetAreaInfo = function(area) return language.areas[area] or ("Zona " .. area) end,
+            GetAreaInfo = function(area) return language and language.areas[area] or ("Zona " .. area) end,
             GetPlayerMapPosition = function() return state.standingOn and STANDING_AT end },
         GetMerchantNumItems = function() return #(state.merchant or NO_PROFESSIONS) end,
         GetMerchantItemID = function(i) return state.merchant[i] end,
@@ -740,6 +758,8 @@ do
     local withAbilities = 0
     for _ in pairs(J.Abilities) do withAbilities = withAbilities + 1 end
     check("hundreds of bosses have abilities", withAbilities > 150)
+    check("a summoned boss many groups skip is optional, so the run finishes without him",
+        J.Boss(10506).optional and not J.Numbered(J.Boss(10506)) and J.Boss(8443).optional)
 
     -- The Filters menu and the settings page are both built from J.OPTION_GROUPS.
     local labels, offered = {}, {}
@@ -1281,6 +1301,195 @@ do
 end
 
 -------------------------------------------------------------------------------
+--  Beside the map in a dungeon: the page drawn once, and again only when something changed
+-------------------------------------------------------------------------------
+do
+    local ns, state, S = fixture({ enabled = true, favourites = true })
+    local J, map = ns.Journal, state.worldMap
+    local draws, draw = 0, J.View.Mixin.Draw
+    J.View.Mixin.Draw = function(...)
+        draws = draws + 1
+        return draw(...)
+    end
+    ns.Apply()
+    state.instance = { id = 36, name = "The Deadmines" }
+    local wanted = J.Boss(639).loot[1]
+    J.Favourites.Toggle(wanted)
+    local function Open()
+        map.shown = true
+        state.hooked.OnShow(map)
+    end
+    local function Close()
+        map.shown = false
+        state.hooked.OnHide(map)
+    end
+    Open()
+    check("the map opened in a dungeon draws its page", draws == 1)
+    local view
+    for _, frame in ipairs(state.made) do
+        if rawget(frame, "keepHidden") then view = frame end
+    end
+    check("on a view that keeps it while the map is shut", view ~= nil)
+    local function Event(event, arg)
+        view.scripts.OnEvent(view, event, arg)
+    end
+    Close()
+    Open()
+    check("opened again with nothing changed, it is not drawn again", draws == 1)
+    Close()
+    Event("QUEST_LOG_UPDATE")
+    Event("BAG_UPDATE_DELAYED")
+    Open()
+    check("quest log and bag updates that change nothing on it leave it", draws == 1)
+    Close()
+    state.owned[wanted] = 1
+    Event("BAG_UPDATE_DELAYED")
+    Open()
+    check("a favourite looted while it was shut draws it again", draws == 2)
+    Close()
+    Event("PLAYER_EQUIPMENT_CHANGED")
+    check("gear changed while shut: it stops listening until it is drawn", next(view.events) == nil)
+    Open()
+    check("and draws on the next open", draws == 3)
+    Close()
+    S.Set("showChance", false)
+    Open()
+    check("a setting changed while shut draws it again", draws == 4)
+    Close()
+    J.Favourites.Toggle(wanted)
+    Open()
+    check("so does a favourite added or removed", draws == 5)
+    Close()
+    state.instance = nil
+    for _, frame in ipairs(state.made) do
+        if frame.events.PLAYER_ENTERING_WORLD and frame ~= view then
+            frame.scripts.OnEvent(frame, "PLAYER_ENTERING_WORLD")
+        end
+    end
+    check("after a loading screen it listens for nothing", next(view.events) == nil)
+    state.instance = { id = 36, name = "The Deadmines" }
+    Open()
+    check("and the next open draws it", draws == 6)
+    Close()
+    local function RunTimers()
+        local timers = state.timers
+        state.timers = {}
+        for _, fn in ipairs(timers) do fn() end
+    end
+    local function LoadingScreen()
+        for _, frame in ipairs(state.made) do
+            if frame.events.PLAYER_ENTERING_WORLD and frame ~= view then
+                frame.scripts.OnEvent(frame, "PLAYER_ENTERING_WORLD")
+            end
+        end
+        RunTimers()
+    end
+    LoadingScreen()
+    local warmed = draws
+    check("a loading screen into a dungeon draws its page with the map shut", warmed > 6 and view:IsVisible() == false)
+    Open()
+    check("so the first open after it draws nothing", draws == warmed)
+    Close()
+    view.waitingFor[4242] = true
+    Event("GET_ITEM_INFO_RECEIVED", 4242, true)
+    RunTimers()
+    check("an item's name arriving while shut draws it again, still shut", draws > warmed)
+    warmed = draws
+    Open()
+    check("and the open after that draws nothing", draws == warmed)
+    Close()
+    state.owned[J.Boss(639).loot[2]] = 1
+    Event("BAG_UPDATE_DELAYED")
+    Open()
+    check("any drop on the page looted while shut draws it again, for its In Bag tag", draws == warmed + 1)
+    warmed = draws
+    local mapView
+    for _, frame in ipairs(state.made) do
+        local owner = rawget(frame, "view")
+        if rawget(frame, "glow") and type(owner) == "table" and owner.onWorldMap then mapView = owner end
+    end
+    check("inside, the dungeon's map shows over the world map", mapView ~= nil)
+    local MapView = getmetatable(mapView)
+    local mapDraw, mapDraws = MapView.Draw, 0
+    MapView.Draw = function(self, ...)
+        if self == mapView then mapDraws = mapDraws + 1 end
+        return mapDraw(self, ...)
+    end
+    Close()
+    Open()
+    check("opened again, its pins are not drawn again", mapDraws == 0 and draws == warmed)
+    Close()
+    ns.Apply()
+    Open()
+    check("a profile applied while shut draws them again", mapDraws == 1)
+    Close()
+    local pins = S.Get("mapQuestPins")
+    S.Set("mapQuestPins", true)
+    Open()
+    check("so does a setting changed while shut", mapDraws == 2)
+    Close()
+    local level = state.level
+    state.level = level + 1
+    Open()
+    check("and a quest change (here a level) with quest pins on", mapDraws == 3)
+    Close()
+    state.level = level
+    Open()
+    Close()
+    J.Kills.Add((J.Boss(639)))
+    Open()
+    check("and a kill while shut", mapDraws == 5)
+    Close()
+    Open()
+    check("the open after that leaves them", mapDraws == 5)
+    Close()
+    local portraits, portraitsMade = rawget(_G, "SetPortraitTextureFromCreatureDisplayID"), 0
+    _G.SetPortraitTextureFromCreatureDisplayID = function() portraitsMade = portraitsMade + 1 end
+    ns.Apply()
+    Open()
+    local firstPortraits = portraitsMade
+    Close()
+    ns.Apply()
+    Open()
+    check("drawn again, a boss pin keeps its portrait", firstPortraits > 0 and portraitsMade == firstPortraits)
+    _G.SetPortraitTextureFromCreatureDisplayID = portraits
+    Close()
+    warmed = draws
+    Event("GROUP_ROSTER_UPDATE")
+    Open()
+    check("a roster update that changes nothing on it leaves the page", draws == warmed)
+    Close()
+    state.party = {}
+    Event("GROUP_ROSTER_UPDATE")
+    Open()
+    check("joining a group while shut draws it again, for its Share All", draws == warmed + 1)
+    Close()
+    state.party = nil
+    Event("GROUP_ROSTER_UPDATE")
+    Open()
+    Close()
+    view.scripts.OnEvent(view, "ENCOUNTER_END", 1144, "VanCleef", 1, 5, 0)
+    Open()
+    check("a wipe while shut leaves it", draws == warmed + 2)
+    Close()
+    view.scripts.OnEvent(view, "ENCOUNTER_END", 1144, "VanCleef", 1, 5, 1)
+    Open()
+    check("a kill while shut draws it again", draws == warmed + 3)
+    Close()
+    local beforeLoading = mapDraws
+    LoadingScreen()
+    local afterLoading = mapDraws
+    check("a loading screen draws the dungeon's map too, with the map shut", afterLoading > beforeLoading)
+    Open()
+    check("so the first open after it draws no pins", mapDraws == afterLoading)
+    S.Set("mapQuestPins", pins)
+    MapView.Draw = mapDraw
+    Close()
+    S.Set("enabled", false)
+    check("off, the kept page listens for nothing", next(view.events) == nil)
+end
+
+-------------------------------------------------------------------------------
 --  Beside the map outside a dungeon: the factions earned where you are
 -------------------------------------------------------------------------------
 do
@@ -1426,8 +1635,10 @@ do
     local tipLines, setByID = {}, 0
     rawset(state.tooltip, "AddLine", function(_, text) tipLines[#tipLines + 1] = text end)
     rawset(state.tooltip, "SetItemByID", function() setByID = setByID + 1 end)
+    DJ.Get("RazorfenDowns").closed = true
     ns.OpenJournalWindow(DJ.Get("RazorfenDowns"))
-    check("a dungeon not open says so at the top of its page", DJ.Get("RazorfenDowns").closed and PageSays(DJ.CLOSED_NOTE))
+    check("a dungeon not open says so at the top of its page", PageSays(DJ.CLOSED_NOTE))
+    DJ.Get("RazorfenDowns").closed = nil
     check("its bosses list their whole loot", Has(findBoss("RazorfenDowns", "Tuten'kash").loot, 10776))
     local row = Row(notYet)
     check("an item not in Forever yet has its row", row ~= nil)
@@ -1441,6 +1652,7 @@ do
     check("not an upgrade, no look to collect", not DJ.Loot.Upgrade(notYet) and DJ.Loot.Appearance(notYet) == nil)
     check("found by a search for its name", notYetView:Listed(notYet, notYetName:lower()))
     row.scripts.OnEnter(row)
+    check("the game's item comparison waits for Shift", rawget(state.tooltip, "suppressAutomaticCompareItem") == true)
     check("its tooltip is the Journal's own", setByID == 0 and rawget(state.tooltip, "text") == notYetName)
     check("which says it is not in Forever yet", Has(tipLines, DJ.NOT_YET))
     check("and offers the menu, not a link it cannot give", Has(tipLines, "Right-click: menu"))
@@ -1464,11 +1676,8 @@ do
     end
     for _, key in ipairs({ "ScarletMonasteryGraveyard", "ScarletMonasteryLibrary", "ScarletMonasteryArmory",
         "ScarletMonasteryCathedral", "ExcavationSite", "HallOfThanes", "RuinsOfLordaeron", "Deadmines", "Dalaran",
-        "ShapersTerrace" }) do
+        "ShapersTerrace", "RazorfenDowns", "Uldaman" }) do
         check("open on Forever: " .. key, not DJ.Get(key).closed)
-    end
-    for _, key in ipairs({ "RazorfenDowns", "Uldaman" }) do
-        check("not open on Forever yet: " .. key, DJ.Get(key).closed)
     end
     -- An item the server will not send: no redraw for it, never waited on again.
     ns.OpenJournalWindow(ns.Journal.Get("Deadmines"))
@@ -1563,6 +1772,41 @@ do
     menu.scripts.OnHide(menu)
     check("and it stops listening", next(menu.events) == nil)
     state.mouseOver = nil
+    do
+        -- The level range: two boxes, empty for no limit, saved when one is left.
+        local levelRow
+        for _, part in ipairs(menu.parts) do
+            if rawget(part, "option") and part.option.to then levelRow = part end
+        end
+        check("the level range is two boxes, empty at first", levelRow and levelRow.low:GetText() == ""
+            and levelRow.high:GetText() == "" and S.Get("lootMinLevel") == 0 and S.Get("lootMaxLevel") == 0)
+        local filtersOn = tonumber(rawget(funnel.count, "text")) or 0
+        levelRow.low:SetText("40")
+        levelRow.low.scripts.OnEditFocusLost(levelRow.low)
+        check("a level typed is saved as the box is left", S.Get("lootMinLevel") == 40)
+        check("and counts as a filter on", tonumber(rawget(funnel.count, "text")) == filtersOn + 1)
+        levelRow.high:SetText("45")
+        levelRow.high.scripts.OnEscapePressed(levelRow.high)
+        check("Escape puts the box back", levelRow.high:GetText() == "" and S.Get("lootMaxLevel") == 0)
+        local Loot = ns.Journal.Loot
+        local filters = Loot.ReadFilters({})
+        filters.usableOnly, filters.myRecipes, filters.showCosmetic = false, false, true
+        filters.missingBis, filters.upgradesOnly = false, false
+        local below, inside
+        for id, facts in pairs(ns.Journal.Items) do
+            if facts[ns.Journal.FACT.REQUIRED] == 30 then below = id end
+            if facts[ns.Journal.FACT.REQUIRED] == 50 then inside = id end
+        end
+        check("an item under the range is not listed, one in it is", not Loot.Shown(below, filters)
+            and Loot.Shown(inside, filters))
+        check("the range takes in its ends, and no required level counts as 1",
+            Loot.LevelFits(40, filters) and not Loot.LevelFits(39, filters)
+            and Loot.LevelFits(nil, { minLevel = 0, maxLevel = 1 }) and not Loot.LevelFits(46, { minLevel = 0, maxLevel = 45 }))
+        levelRow.low:SetText("")
+        levelRow.low.scripts.OnEditFocusLost(levelRow.low)
+        check("an emptied box is no limit again", S.Get("lootMinLevel") == 0
+            and Loot.LevelFits(30, Loot.ReadFilters({})))
+    end
     -- An item's drop chance on hover reads as its marks do: a bag, the words in its bar's
     -- colour, then how often, muted.
     local item, lines = nil, {}
@@ -1725,7 +1969,7 @@ do
         for _, entry in ipairs(doneList) do allDone = allDone and entry.kind == "done" end
         check("on, they are listed as handed in", allDone)
         check("Hide Completed Dungeons starts off, in the filters", state.defaults.hideCompleted == false
-            and J.OPTION_GROUPS[1].options[6].key == "hideCompleted")
+            and J.OPTION_GROUPS[1].options[7].key == "hideCompleted")
         check("off, a dungeon all done stays listed", deadminesRow.shown ~= false)
         local before = List.Next(deadmines, -1)
         S.Set("hideCompleted", true)
@@ -1742,7 +1986,7 @@ do
         local color = env.GetQuestDifficultyColor
         env.GetQuestDifficultyColor = function() return env.QuestDifficultyColors.trivial end
         check("Show Low-Level Quests starts off, after Show Done Quests", state.defaults.showLowQuests == false
-            and J.OPTION_GROUPS[1].options[8].key == "showLowQuests")
+            and J.OPTION_GROUPS[1].options[9].key == "showLowQuests")
         local greyList = J.Quests.List(deadmines.quests, {}, {})
         local onlyTurnIns = true
         for _, entry in ipairs(greyList) do
@@ -1844,8 +2088,8 @@ do
     state.instance = { id = 36, name = "The Deadmines" }
     EnterWorld()
     check("until you leave and come back", tracker:IsShown())
-    -- Skip at Max Level: off by default; on, a max-level character enters with it closed.
-    check("Skip at Max Level is off by default", state.defaults.trackerSkipMaxLevel == false)
+    -- Hide at Max Level: off by default; on, a max-level character enters with it closed.
+    check("Hide at Max Level is off by default", state.defaults.trackerSkipMaxLevel == false)
     tracker:Hide()
     tracker.scripts.OnHide(tracker)
     state.instance = nil
@@ -1867,6 +2111,37 @@ do
     EnterWorld()
     check("below max level it still opens", tracker:IsShown())
     S.Set("trackerSkipMaxLevel", false)
+    -- Only My Quests at Max Level: off by default; on, at max level the tracker lists only the
+    -- quests in your log, and does not open on a dungeon where you have none.
+    do
+        local Quests, Tracker = ns.Journal.Quests, ns.Journal.QuestTracker
+        local function Reenter()
+            tracker:Hide()
+            tracker.scripts.OnHide(tracker)
+            state.instance = nil
+            EnterWorld()
+            state.instance = { id = 36, name = "The Deadmines" }
+            EnterWorld()
+        end
+        check("Only My Quests at Max Level is off by default", state.defaults.trackerLogOnlyMaxLevel == false)
+        local mine = Quests.List(deadmines.quests, {}, {})[1]
+        S.Set("trackerLogOnlyMaxLevel", true)
+        check("on, below max level it changes nothing", not Tracker.LogOnly() and tracker:IsShown())
+        state.maxLevel = state.level
+        check("at max level, with none in your log, none are listed",
+            mine ~= nil and #Quests.List(deadmines.quests, {}, {}, false, false, true) == 0)
+        Reenter()
+        check("and entering the dungeon leaves it closed", not tracker:IsShown())
+        state.logged[mine.quest[1]] = 1
+        state.onQuest = { [mine.quest[1]] = true }
+        Reenter()
+        check("one in your log: it opens", tracker:IsShown())
+        local logOnly = Quests.List(deadmines.quests, {}, {}, false, false, true)
+        check("listing that quest alone", #logOnly == 1 and logOnly[1].quest == mine.quest)
+        S.Set("trackerLogOnlyMaxLevel", false)
+        check("off again, the rest are back", #Quests.List(deadmines.quests, {}, {}) > 1 and tracker:IsShown())
+        state.logged[mine.quest[1]], state.onQuest, state.maxLevel = nil, nil, nil
+    end
     -- A /reload inside: the settings are applied during that loading screen's own event, so
     -- applying them has to look where you are.
     tracker:Hide()
@@ -2335,11 +2610,13 @@ do
         local keys = LinksRow("Keys")
         state.menu = nil
         keys.links[1].scripts.OnClick(keys.links[1])
-        local steps = 0
+        local steps, inside = 0, 0
         for _, entry in ipairs(state.menu or {}) do
             if entry.text:find("^%d+%.") then steps = steps + 1 end
+            if entry.text:find("Zona 1583", 1, true) then inside = inside + 1 end
         end
         check("clicking the Drakefire Amulet opens its attunement chain, a step a line", steps > 0)
+        check("its step done in Blackrock Spire is marked with it", inside == 1)
         ns.Journal.Settings.Set("questHelp", false)
         state.menu = nil
         keys.links[1].scripts.OnClick(keys.links[1])
@@ -2416,6 +2693,16 @@ do
             if type(text) == "string" and text:find("^%d+ to do$") then toDo = true end
         end
         check("the header counts the quests left to do", toDo)
+        local hallDone, hallTotal = J.Quests.Progress(hall.quests)
+        local doneOf = hallDone .. "/" .. hallTotal .. "|r"
+        local counted = false
+        for _, font in ipairs(state.fonts) do
+            local text = rawget(font, "text")
+            if type(text) == "string" and text:find("QUESTS", 1, true) and text:find(doneOf, 1, true) then
+                counted = true
+            end
+        end
+        check("the quests' title counts them handed in of all of them", hallTotal > 0 and counted)
         check("no Share All out of a group", LinkSaying("Share All") == nil)
         state.party = { { name = "Ally", quests = {} } }
         ns.OpenJournalWindow(hall)
@@ -2702,7 +2989,7 @@ do
                 check("it starts, takes or is used for a quest: " .. data.name, roles > 0)
             end
         end
-        check("the quest givers and objects of every classic dungeon with one inside", entries == 54 and maps == 16)
+        check("the quest givers and objects of every classic dungeon with one inside", entries == 60 and maps == 19)
 
         local function QuestPins()
             local list = {}
@@ -2828,12 +3115,43 @@ do
         for pinKey, spot in pairs(shippedSpots) do depthsPins[pinKey] = spot end
     end)() end
 
+    -- Spots moved or added from players' reports (2026-11-26): each on its floor and where it was put.
+    do
+        local REPORTED = {
+            BlackmawHold = { [247206] = { 1, 0.424, 0.7 }, [269104] = { 1, 0.589, 0.842 },
+                [247198] = { 1, 0.711, 0.773 }, [247195] = { 2, 0.715, 0.269 }, [247231] = { 3, 0.585, 0.35 },
+                [247209] = { 4, 0.447, 0.363 }, [-570888] = { 4, 0.431, 0.445 }, [247207] = { 5, 0.558, 0.347 },
+                [-570890] = { 5, 0.474, 0.513 }, [247234] = { 6, 0.638, 0.586 } },
+            HallOfThanes = { [265002] = { 1, 0.427, 0.647 } },
+            Gnomeregan = { [-142487] = { 1, 0.452, 0.877 }, [7850] = { 2, 0.776, 0.797 } },
+            ShadowfangKeep = { [4278] = { 1, 0.279, 0.6 }, [3864] = { 1, 0.322, 0.595 }, [3887] = { 1, 0.162, 0.807 },
+                [4627] = { 5, 0.593, 0.538 }, [-36738] = { 5, 0.451, 0.538 }, [4275] = { 7, 0.625, 0.191 } },
+        }
+        for key, spots in pairs(REPORTED) do
+            for id, want in pairs(spots) do
+                local spot = J.Maps[key].pins[id]
+                check("a reported spot: " .. key .. " " .. id, spot ~= nil and spot[1] == want[1]
+                    and spot[2] == want[2] and spot[3] == want[3])
+            end
+        end
+        local library = J.Maps.ScarletMonasteryLibrary.entrance
+        check("the Library's entrance on its swirl", library[1] == 1 and library[2] == 0.13 and library[3] == 0.245)
+        local totems = {}
+        for _, data in ipairs(J.Maps.BlackmawHold.quests) do totems[data.object] = data.use[1] end
+        check("Blackmaw Hold's two totems are The Twin Bears'", totems[570890] == 92066 and totems[570888] == 92066)
+        local ups = {}
+        for _, stairs in ipairs(J.Maps.BlackmawHold.stairs) do ups[stairs[1] .. ">" .. stairs.to] = true end
+        check("Blackmaw Hold's stairs: down from the Grove, back up out of the Grotto, then down level by level",
+            ups["1>2"] and ups["2>1"] and ups["1>3"] and ups["3>4"] and ups["4>5"] and ups["5>6"])
+    end
+
     local NOT_PLACED = {
         Dalaran = { [246931] = "Mana Wraith" },
         LowerBlackrockSpire = { [10584] = "Urok Doomhowl" },
         Scholomance = { [10432] = "Vectus", [10433] = "Marduk Blackpool", [10508] = "Ras Frostwhisper",
             [16118] = "Kormok" },
         Stratholme = { [11032] = "Malor the Zealous", [11058] = "Ezra Grimm" },
+        ShapersTerrace = { [261993] = "King Op" },
         UpperBlackrockSpire = { [16042] = "Lord Valthalak" },
     }
     local function MapFloorsAndGaps(key, map, dungeon)
@@ -2933,6 +3251,35 @@ do
         sfkView:Step(1)
         check("Fenrus' Room after it", sfkView.floor == 5 and rawget(sfkView.floorName, "text") == "Fenrus' Room"
             and PinFor("Odo the Blindwatcher") == nil and PinFor("Fenrus the Devourer") ~= nil)
+        J.OpenDungeonMap(J.Get("BlackfathomDeeps"))
+        local bfdView = ShownView("Ghamoo-ra")
+        while bfdView.floor ~= 2 do bfdView:Step(1) end
+        local lorgus, faded = 0, 0
+        for _, made in ipairs(state.made) do
+            local boss = rawget(made, "boss")
+            if rawget(made, "glow") and made.view == bfdView and boss and boss.name == "Lorgus Jett"
+                and rawget(made, "shown") ~= false then
+                lorgus = lorgus + 1
+                if rawget(made, "also") then faded = faded + 1 end
+            end
+        end
+        check("Lorgus Jett: his pin and the two other spots he can spawn at", lorgus == 3 and faded == 2)
+        J.OpenDungeonMap(J.Get("Stockade"))
+        local stockView = ShownView("Targorr the Dread")
+        local spots = {}
+        for _, made in ipairs(state.made) do
+            local boss = rawget(made, "boss")
+            if rawget(made, "glow") and made.view == stockView and boss and rawget(made, "shown") ~= false then
+                local seen = spots[boss.name] or { 0, 0 }
+                seen[1] = seen[1] + 1
+                if rawget(made, "also") then seen[2] = seen[2] + 1 end
+                spots[boss.name] = seen
+            end
+        end
+        for _, name in ipairs({ "Targorr the Dread", "Bruegal Ironknuckle" }) do
+            check(name .. ": his pin and the three other spots he can spawn at",
+                spots[name] and spots[name][1] == 4 and spots[name][2] == 3)
+        end
         for _, key in ipairs({ "RazorfenDowns", "Uldaman", "Maraudon", "SunkenTemple", "BlackrockDepths", "DireMaul",
             "LowerBlackrockSpire", "UpperBlackrockSpire", "Scholomance", "Stratholme", "Dalaran", "ShadowfangKeep",
             "Deadmines" }) do
@@ -3053,14 +3400,14 @@ do
         local blackmaw = J.Get("BlackmawHold")
         J.OpenDungeonMap(blackmaw)
         local blackmawView = J.DungeonMap.windowView
-        check("Blackmaw Hold: no pins yet, so all its pictures are offered", blackmawView.dungeon == blackmaw
-            and FloorsOf(blackmawView) == "1,2,3,4,5,6"
-            and blackmawView.picture.texture == "Interface\\AddOns\\NaowhForever_DungeonJournal\\Media\\Maps\\BlackmawHold_1"
-            and rawget(blackmawView.floorName, "text") == "Blackmaw Grove")
-        blackmawView:Step(1)
-        check("Festering Grotto next", blackmawView.picture.texture
-            == "Interface\\AddOns\\NaowhForever_DungeonJournal\\Media\\Maps\\BlackmawHold_2"
+        check("Blackmaw Hold: a pin on every level, so all its pictures are offered, opening on its first boss's",
+            blackmawView.dungeon == blackmaw and FloorsOf(blackmawView) == "1,2,3,4,5,6"
+            and blackmawView.picture.texture == "Interface\\AddOns\\NaowhForever_DungeonJournal\\Media\\Maps\\BlackmawHold_2"
             and rawget(blackmawView.floorName, "text") == "Festering Grotto")
+        blackmawView:Step(-1)
+        check("Blackmaw Grove before it", blackmawView.picture.texture
+            == "Interface\\AddOns\\NaowhForever_DungeonJournal\\Media\\Maps\\BlackmawHold_1"
+            and rawget(blackmawView.floorName, "text") == "Blackmaw Grove")
 
         J.OpenDungeonMap(J.Get("AlcazPrison"))
         local alcazView = J.DungeonMap.windowView
@@ -3346,6 +3693,19 @@ do
     for _, f in ipairs(strat.factions or {}) do linked = linked or f == dawn end
     check("Stratholme links to the Argent Dawn", linked)
     check("and the Argent Dawn back to it", dawn.linked[1] == strat)
+    for _, key in ipairs({ "SilverwingSentinels", "WarsongOutriders", "StormpikeGuard", "FrostwolfClan" }) do
+        local faction = FactionOf(J, key)
+        check(key .. " is a battleground's, with its quartermaster and a reward at each standing", faction
+            and faction.tab == "pvp" and faction.instance and faction.quartermaster and #faction.tiers == 4)
+    end
+    local sentinels = FactionOf(J, "SilverwingSentinels")
+    local bands = 0
+    for _, tier in ipairs(sentinels.tiers) do
+        for _, id in ipairs(tier.items) do
+            if id == 20439 or id == 19517 or id == 19514 then bands = bands + 1 end
+        end
+    end
+    check("each level of a reward the quartermaster sells is listed", bands == 3)
 end
 
 -------------------------------------------------------------------------------
@@ -3531,6 +3891,8 @@ do
     check("the header says where the rewards are sold, as a quartermaster's", Said("Rank vendor in ")
         and not Said("Rank rewards are sold in Stormwind"))
     check("your honor", Said("1234"))
+    check("the Marks of Honor, with what each battleground's buys", Said("MARKS OF HONOR")
+        and Said("Warsong Gulch") and Said("Legs, wrists and hands.") and Said("Darkspear Islands"))
 
     -- Back to the dungeons: the page last shown there.
     check("the first tab goes back", Click("Dungeons & Raids"))
@@ -3604,6 +3966,18 @@ do
     state.merchant = { 999999 }
     vendors.scripts.OnEvent(vendors, "MERCHANT_SHOW")
     check("another vendor changes nothing", Rep.Quartermaster(druids) == spot)
+    -- Both sides' battleground quartermasters sell the same potions: only what one alone sells places it.
+    state.merchant, state.vendor = { 17348 }, "Illiyana Moonblaze"
+    vendors.scripts.OnEvent(vendors, "MERCHANT_SHOW")
+    local learned = false
+    for _, key in ipairs({ "SilverwingSentinels", "WarsongOutriders", "StormpikeGuard", "FrostwolfClan" }) do
+        learned = learned or state.account.journalQuartermasters[key] ~= nil
+    end
+    check("an item several quartermasters sell places none of them", not learned)
+    state.merchant = { 17348, 19506 }
+    vendors.scripts.OnEvent(vendors, "MERCHANT_SHOW")
+    check("the Silverwing tabard places the Silverwing Sentinels'",
+        Rep.Quartermaster(FactionOf(J, "SilverwingSentinels")).name == "Illiyana Moonblaze")
     -- A spot learned before, kept as the map's 0 to 1: put in percent once, when read.
     state.account.journalQuartermasters.NightclawDruids = { map = 2422, x = 0.5, y = 0.25 }
     local old = Rep.Quartermaster(druids)
@@ -3903,6 +4277,29 @@ do
         end
     end
     check("the data has its hand-ins", handIns >= 20)
+
+    -- Alterac Valley's quest chains: a row a step, with the standing it needs, the reputation it
+    -- gives, its step of the chain and its rewards; the other side's are not yours.
+    ns.OpenJournalWindow(FactionOf(J, "StormpikeGuard"))
+    local rise = QuestRow("Rise and Be Recognized")
+    check("an insignia quest, with what it gives and the standing it needs", rise
+        and rise.entry.name:find("+100 rep", 1, true) and rise.entry.name:find("FACTION_STANDING_LABEL5", 1, true))
+    check("as step 2 of the insignia chain", rise.entry.step == 2 and rise.entry.steps == 6 and rise.chain:IsShown())
+    check("not a hand-in", rise.entry.turnin == nil)
+    check("with a waypoint to who gives it", rise.entry.canWaypoint and Said("Lieutenant Haggerdin (39.5, 81.2)"))
+    local hero = QuestRow("Hero of the Stormpike")
+    check("Hero of the Stormpike, after The Battle of Alterac", hero and hero.entry.step == 2 and hero.entry.steps == 2
+        and QuestRow("The Battle of Alterac"))
+    check("with the weapons to choose from", J.QuestRewards[8271].choose[1] == 19107)
+    check("the chain's steps are named before the game knows them", J.Quests.StepName(7172) == "The Eye of Command")
+    ns.OpenJournalWindow(FactionOf(J, "FrostwolfClan"))
+    check("the Horde's are not an Alliance character's", not QuestRow("Hero of the Frostwolf"))
+    local stormpike = FactionOf(J, "StormpikeGuard")
+    state.log, state.repQuests[7168] = { 7168 }, stormpike.id
+    log = {}
+    local _, empty = Rep.LogQuests(stormpike, log)
+    check("a chain quest in your log is not listed twice, but changes the page's quests", #log == 0 and empty > 0)
+    state.log, state.repQuests[7168] = {}, nil
 
     -- A dungeon's page: each faction earned there with your standing.
     state.standings[529] = { reaction = 6, currentStanding = 12000, currentReactionThreshold = 9000,
@@ -4678,12 +5075,13 @@ do
     providers[1]:RefreshAllData()
     local spots = {}
     for _, dungeon in ipairs(J.Dungeons()) do
-        local e = dungeon.entrance
-        if e and J.FactionShown(dungeon) then spots[e.map .. ":" .. e.x .. ":" .. e.y] = true end
+        if dungeon.entrance and J.FactionShown(dungeon) then
+            for _, e in ipairs(dungeon.doors or { dungeon.entrance }) do spots[e.map .. ":" .. e.x .. ":" .. e.y] = true end
+        end
     end
     local want = 0
     for _ in pairs(spots) do want = want + 1 end
-    check("a map that holds them shows every entrance, one pin per spot", #pins == want and want > 20)
+    check("a map that holds them shows every entrance and door, one pin per spot", #pins == want and want > 20)
     -- Off the map's edge: not on it.
     state.onMap = { [1415] = 3 }
     shownMap = 1415
@@ -4748,6 +5146,21 @@ do
     local waypoint = state.waypoints[#state.waypoints]
     check("a click puts a waypoint on the entrance", waypoint.map == 1445 and waypoint.x == 52.9
         and waypoint.note == " (entrance)" and waypoint.title == "Onyxia's Lair")
+    -- A dungeon with several doors: one pin each, named, its waypoint on that door.
+    shownMap = 1444   -- Feralas: Dire Maul
+    providers[1]:RefreshAllData()
+    local doors = {}
+    for _, group in ipairs(pins) do
+        if group.dungeons[1].key == "DireMaul" then doors[group.door] = group end
+    end
+    check("Dire Maul has a pin for each door, none for its courtyard", doors.East and doors["East Back Door"]
+        and doors.West and doors.North and #pins == 4)
+    pin:OnAcquired(doors.West)
+    pin:OnMouseEnter()
+    pin:OnClick("LeftButton")
+    waypoint = state.waypoints[#state.waypoints]
+    check("a door's waypoint is on that door, named for it", waypoint.map == 1444 and waypoint.x == 60.3
+        and waypoint.y == 30.7 and waypoint.title == "Dire Maul: West")
     S.Set("mapEntrances", false)
     check("off again, its pins go", #pins == 0)
 end
