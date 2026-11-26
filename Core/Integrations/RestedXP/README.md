@@ -16,7 +16,7 @@ Core/Integrations/RestedXP/
   Themes.lua     the themes, the settings behind the RESTEDXP card, and the hooks
   WindowSettings.lua  what the window can be changed in: its options, colors and theme
   WindowModel.lua     what RestedXP shows, read as plain data for the window to draw
-  WindowItems.lua     RestedXP's Active Items window: what a step has is listed the first time it is shown
+  WindowItems.lua     RestedXP's Active Items window: its buttons drag onto an action bar
   Window.lua     the Naowh guide window: its frames, drawing, clicks and the look of the two small windows
   Icons.lua      Naowh's step icons, put in RestedXP's icon table as it loads
   Waypoint.lua   optional current guide destination feed for the world pin, routed by Journeys when on
@@ -276,14 +276,6 @@ Core/Integrations/RestedXP/
   that RestedXP sets again at each `UpdateTargetFrame`), and with a step icon style picked those are the
   gossip and combat glyphs (`RXPIconTexture`), put right after each update and given back when the window
   goes off; a portrait is never touched.
-- RestedXP's V2 puts what the active steps want in its lists for the Active Items window (`activeMacros`,
-  `activeSpells`, `activeItems`) in `SetStep`, before its `UpdateActiveStepsFrame` has bound the steps' elements, which is
-  what makes a step's macro, spell or item, so the first time a step is shown the lists and the window are empty and it
-  came the second time (the /sit macro of a die step was not there). `Sync` in `WindowItems.lua`, after each
-  `UpdateActiveStepsFrame` and at each draw, puts what the active steps have in the lists where it is missing and makes
-  the window again, once, out of combat; an entry that is there is left as it is. That hook cannot be taken off, so `Sync`
-  asks `ns.RXPWindowActive()` first and does nothing once the window is turned off: RestedXP's lists are only written while
-  the window is on.
 - The buttons of RestedXP's Active Items window (the macros of a die step or cooking, spells, items) can be dragged
   onto an action bar, which RestedXP lets only a bag item do, while Shift is held (`WindowItems.lua`, wired from `Draw`
   and after each `UpdateItemFrame`, out of combat, and only while the window is on: those hooks cannot be taken off, so
