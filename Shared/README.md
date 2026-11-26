@@ -101,8 +101,9 @@ Shared/
   UI/Forever.lua   the Forever skin's parts, each on the game's own art with a drawn fallback: the window
                    frame with its title bar, portrait and red close (Parts.ForeverFrame), insets, buttons,
                    fields, the search box, tabs, check boxes, dropdowns, sliders, swatches, the
-                   help tip, list bars, headings, scroll chevrons, and the options
-                   window's header band and metal rails (Parts.ForeverPanes)
+                   help tip, list bars, headings, scroll chevrons, a card on the game's card art
+                   (Parts.ForeverCard), and the options window's header band and metal rails
+                   (Parts.ForeverPanes)
   UI/Tabs.lua      a switch of parts side by side (Parts.Tabs), and a search box (Parts.SearchBox)
   UI/SettingsCard.lua a module's card at the top of its settings page: the logo, a line or two, and the
                    button that opens its window
@@ -217,15 +218,17 @@ Each file uses only the ones above it in `Shared.xml`. Every part sits on `ns.Sh
   | `opacity()` | its opacity, for `panel:Paint()` |
   | `load()`, `save(point, relativePoint, x, y)`, `place` | its place: read, saved on drag, and the default `{ point, relativePoint, x, y }` |
   | `mover(panel, onMoved)` | Unlock Mode's mover: return `ns.UI.AttachMover(panel, label, onMoved, page)`; it saves through `save` |
+  | `locked()` | true while dragging the window or its title must not move it; Unlock Mode's mover still does |
   | `maxHeight()` | taller than this, its body scrolls |
 
   The panel has `panel:Paint()`, `panel:Place()`, `panel:SetTrackerWidth(w)`,
   `panel:Fit(bodyHeight)` (true when it starts or stops scrolling: set its width again and
   redraw), `panel:ScrollGap()`, `panel:Top()` and `panel:SetRows(entries)`: pooled rows of
-  `{ text, sub, color, done, waypoint(entry), tip(row), click(row, button) }`, a pin column (a
-  tick once done), the text in `color` (`T.fg` when nil), returning their height. Keep the
-  entries and refill them, with shared functions that read the entry, and a redraw makes no
-  garbage. See `NaowhForever_DungeonJournal/UI/QuestTracker.lua`, and the Discovery trackers for `bar`,
+  `{ text, sub, color, done, waypoint(entry), tip(row), click(row, button), bar, barColor }`, a pin
+  column (a tick once done), the text in `color` (`T.fg` when nil), a thin bar under the lines
+  filled to `bar` (0 to 1) in `barColor` (`T.accent` when nil) when `bar` is set, returning their
+  height. Keep the entries and refill them, with shared functions that read the entry, and a
+  redraw makes no garbage. See `NaowhForever_DungeonJournal/UI/QuestTracker.lua`, and the Discovery trackers for `bar`,
   `SetRows` and `mover`.
 - **A HUD panel:** an on-screen bar or pill uses the windows' own backdrop, `Parts.Backdrop(frame)`
   painted at `Style.BACKDROP_ALPHA` (near opaque, so the world does not tint it), with the 1px black
@@ -449,6 +452,8 @@ What a comment in the code used to say, in short. The house rules behind it are 
   language gets them; one that only goes in one hand says which ("MH Sword", "OH Dagger").
 - `Items.ClassCanUse` reads an item's facts as `ItemFacts` holds them: `{ class, subclass, item
   level, required level, quality }`, class 2 a weapon, subclass 0 no armor type, 6 a shield.
+- Rogues use one-hand axes on Forever, unlike classic: the game's SkillRaceClassInfo gives Axes
+  (skill 44) to warriors and rogues (build 1.60.1.71091), and the weapon masters teach them One-Handed Axes.
 - `Items.SlotsFor` returns shared tables: read them, never change them.
 - `Items.SlotName` names a slot in the player's language. The cloak slot's catalog key is
   "Back (slot)", because "Back" alone is also the Back button; `enUS.lua` gives it its English
@@ -457,7 +462,9 @@ What a comment in the code used to say, in short. The house rules behind it are 
 ### Bags, tooltips, maps and /played
 
 - Bag marks hook each bag frame's `UpdateItems` with `hooksecurefunc`, never `SetScript`, and
-  only once a module first asks. EllesmereUI's bags are painted through the
+  only once a module first asks. The game updates a bag several times in one frame while you loot,
+  and each update repainted every slot once per module, so the paint waits for the next frame and runs
+  once for however many updates came in that frame. EllesmereUI's bags are painted through the
   `RegisterItemOverlayIcon` hook it offers other addons. `Bags.Baganator` hands back Baganator's
   public `Baganator.API` when it is loaded; a module registers its own corner widget there.
 - The guild list's tooltip is GameTooltip, so our lines go on it. The Friends list's tooltip has
@@ -938,6 +945,12 @@ What a comment in the code used to say, in short. The house rules behind it are 
   frame. The waypoint card shows it only above 0% Background Opacity, as it did its edge. The frame
   takes the place of the edge the Group Buttons coloured under the mouse, so they show
   `Options_List_Hover` there instead (`Parts.ForeverHover`), as the game's Settings list does.
+- `Parts.ForeverCard(frame)` is a card's own art: a hidden texture across it, which
+  `Parts.PaintForeverCard(art, atlas, fallback)` shows with the first of the two this client has. It
+  answers whether it did, so the caller keeps its flat card and border when it did not. The caller
+  asks `ns.foreverSkin` first, as for the other parts; the Professions overview's cards wear the
+  game's profession cards with it. Those cards are in `FOREVER_ART_FILES`, since addons cannot look
+  them up by name.
 - `Parts.ProgressLine(parent, height, framed)`: a framed line (the XP tracker's, the trainer card's)
   is the game's cast bar on Forever (`Parts.ForeverProgress`, `FOREVER_CAST_BAR`: its track, gold
   fill untinted and frame cut into ends and middle). Unframed lines in list rows stay thin and

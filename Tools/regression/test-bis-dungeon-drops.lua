@@ -8,7 +8,7 @@ local RULES = { "Shared/Shared.lua", "Shared/Data/Replaced.lua", "Shared/Style.l
     "NaowhForever_BiS/BiS/Sources.lua" }
 local SEP = " \194\183 "
 
-local CLASS_IDS = { WARRIOR = 1, ROGUE = 4, MAGE = 8 }
+local CLASS_IDS = { WARRIOR = 1, ROGUE = 4, SHAMAN = 7, MAGE = 8 }
 
 local EQUIP = {
     [1] = "INVTYPE_HEAD", [2] = "INVTYPE_HEAD", [3] = "INVTYPE_HEAD", [4] = "INVTYPE_HEAD",
@@ -60,7 +60,7 @@ end
 -- With journal false, the Journal has not loaded.
 local function Fixture(class, level, sources, journal)
     local list = Dungeons()
-    local ns = { L = dofile("Tools/regression/locale_stub.lua").L, Upper = string.upper, Lower = string.lower, BiSData = { sources = sources or {}, specs = {} }, BiSLeveling = { specs = {}, sources = {} }, BiSCrafts = {}, BiSClassQuests = {}, BiSWorldDrops = {}, QoLSettings = {},
+    local ns = { L = dofile("Tools/regression/locale_stub.lua").L, Upper = string.upper, Lower = string.lower, BiSData = { sources = sources or {}, specs = {} }, BiSLeveling = { specs = {}, sources = {} }, BiSCrafts = {}, BiSClassQuests = {}, BiSWorldDrops = {}, BiSQuestLevels = {}, BiSSpots = {}, BiSOtherSide = {}, QoLSettings = {},
         Journal = journal ~= false and { Items = FACTS, Dungeons = function() return list end } or nil }
     Load(RULES, Env(ns, class, level))
     ns.Shared.ItemFacts = FACTS
@@ -105,6 +105,8 @@ Case("weapons follow the class's weapon skills", function()
     assert(Can("ROGUE", 9) and Can("ROGUE", 10) and not Can("ROGUE", 11) and not Can("ROGUE", 14))
     assert(not Can("DRUID", 14) and Can("WARRIOR", 14) and Can("HUNTER", 14) and Can("PALADIN", 14))
     assert(not Can("PALADIN", 9) and not Can("WARRIOR", 11) and not Can("HUNTER", 10))
+    local usable = Fixture("ROGUE", 30).Usable
+    assert(usable("ROGUE", { 2, 0, 25, 20, 3 }) and not usable("ROGUE", { 2, 1, 25, 20, 3 }), "rogues wield one-hand axes only")
 end)
 
 local function List(t) return table.concat(t, ",") end
@@ -193,6 +195,18 @@ Case("world drops are offered as drops are, with World drop for a source", funct
     assert(List(m.R.WorldDrops(1, {}, false)) == "", "a dungeon drop or craft is listed there only")
 end)
 
+Case("gear with no required level waits for the level of the quest that rewards it", function()
+    local m = Fixture("ROGUE", 16)
+    m.ns.BiSWorldDrops = { [20] = { 4, 2, 53, 0, 3 } }
+    m.ns.BiSQuestLevels = { [20] = 45 }
+    assert(m.R.ReqLevel(20) == 45)
+    assert(List(m.R.WorldDrops(1, {}, true)) == "", "not near a level 16")
+    m = Fixture("ROGUE", 45)
+    m.ns.BiSWorldDrops = { [20] = { 4, 2, 53, 0, 3 } }
+    m.ns.BiSQuestLevels = { [20] = 45 }
+    assert(List(m.R.WorldDrops(1, {}, true)) == "20")
+end)
+
 Case("an item's source is the Journal's boss and dungeon, a boss before trash", function()
     local m = Fixture("MAGE", 20)
     assert(m.ns.BiSSource(2) == "Boss 2" .. SEP .. "Place 2")
@@ -214,6 +228,18 @@ Case("the Journal's wording wins over wowsrc's; wowsrc's for what drops nowhere"
     assert(m.ns.BiSSource(100) == nil)
 end)
 
+Case("a vendor of the other side gives way to your side's vendor of the same piece", function()
+    local m = Fixture("MAGE", 20, { [30] = "Mokvar" .. SEP .. "Orgrimmar", [31] = "Mokvar" .. SEP .. "Orgrimmar" })
+    local mokvar = { npc = 230317, name = "Mokvar", map = 1454, x = 34.8, y = 38, sells = true }
+    local deliana = { source = "Deliana" .. SEP .. "Ironforge", npc = 230319, name = "Deliana", map = 1455, x = 43.2,
+        y = 52.6, sells = true }
+    m.ns.BiSSpots = { [30] = mokvar, [31] = mokvar }
+    m.ns.BiSOtherSide = { Alliance = { [30] = deliana }, Horde = {} }
+    assert(m.ns.BiSSource(30) == "Deliana" .. SEP .. "Ironforge" and m.R.Spot(30) == deliana)
+    assert(m.ns.BiSSource(31) == "Mokvar" .. SEP .. "Orgrimmar" and m.R.Spot(31) == mokvar,
+        "a piece only the other side sells keeps its vendor")
+end)
+
 Case("a leveling list's item named by nothing else takes the leveling data's source", function()
     local m = Fixture("MAGE", 20, { [99] = "Crafted" })
     m.ns.BiSLeveling.sources = { [2] = "Elsewhere", [99] = "Elsewhere", [100] = "Quest name" .. SEP .. "Quest (Horde)" }
@@ -229,6 +255,15 @@ Case("a spec's ranking leaves out the other side's quest rewards", function()
     setfenv(m.R.OtherSideQuest, setmetatable({ UnitFactionGroup = function() return "Horde" end },
         { __index = getfenv(m.R.OtherSideQuest) }))
     assert(List(m.R.Candidates(1, spec)) == "1,3,13", List(m.R.Candidates(1, spec)))
+end)
+
+Case("a spec's ranking and pre-raid picks leave out quest rewards the class cannot take", function()
+    local m = Fixture("SHAMAN", 52, {}, false)
+    m.ns.BiSClassQuests = { [2] = { 4, 2, 52, 50, 3, "Druid Quest" .. SEP .. "Quest", 1024, 9053 },
+        [3] = { 4, 2, 52, 50, 3, "Shaman Quest" .. SEP .. "Quest", 64 + 1024, 500 } }
+    assert(List(m.R.Candidates(1, { slots = { [1] = { 1, 2, 3 } } })) == "1,3")
+    m.ns.BiSData.specs = { { key = "restoration-shaman", preRaid = { [1] = { 2, 3 } } } }
+    assert(m.R.PreRaid("restoration-shaman")[1] == 3)
 end)
 
 Case("a world drop the Journal places on a boss with no chance stays a world drop, and no dungeon drop", function()
@@ -290,12 +325,15 @@ for _, id in ipairs({ 5821, 263435, 263436, 270039, 270046, 272996, 276727, 2772
     286982, 286983, 286984, 286985, 286993, 286995, 286996, 287068, 287069,
     -- ForeverChanges' lists of 3 Nov 2026: made from another item (Coldflame Saber) or a quest
     -- chain (Wolfsbane), with no source on Wowhead.
-    267369, 276631 }) do UNSOURCED[id] = true end
+    267369, 276631,
+    -- The level-60 pre-raid lists of 24 Nov 2026: no source on them, nor on Wowhead's item pages.
+    9484, 12970, 14550, 17223, 18023, 19989, 21135, 22230, 22273, 272451, 272524, 272536, 276340, 276632,
+    280083, 280084, 282027, 282071, 284102, 284270 }) do UNSOURCED[id] = true end
 
 Case("every ranked item has a source, from the Journal's dungeons or wowsrc", function()
     local dungeons = {}
     local ns = { L = dofile("Tools/regression/locale_stub.lua").L, Upper = string.upper, Lower = string.lower, QoLSettings = {}, Shared = {},
-        BiSLeveling = { specs = {}, sources = {} }, BiSCrafts = {}, BiSClassQuests = {}, BiSWorldDrops = {}, Journal = {
+        BiSLeveling = { specs = {}, sources = {} }, BiSCrafts = {}, BiSClassQuests = {}, BiSWorldDrops = {}, BiSQuestLevels = {}, Journal = {
         AddDungeon = function(_, dungeon)
             dungeon.english = dungeon.name
             dungeons[#dungeons + 1] = dungeon
@@ -303,7 +341,7 @@ Case("every ranked item has a source, from the Journal's dungeons or wowsrc", fu
         Dungeons = function() return dungeons end,
     } }
     local env = Env(ns, "MAGE", 60)
-    local files = { "NaowhForever_BiS/BiS/Data/BiS.lua", "Shared/Data/ItemFacts.lua", "Shared/Data/FactionItems.lua",
+    local files = { "NaowhForever_BiS/BiS/Data/BiS.lua", "NaowhForever_BiS/BiS/Data/Spots.lua", "Shared/Data/ItemFacts.lua", "Shared/Data/FactionItems.lua",
         "NaowhForever_DungeonJournal/Data/Items.lua" }
     for _, path in ipairs(TocFiles("^NaowhForever_DungeonJournal/Data/Dungeons/.*%.lua$")) do files[#files + 1] = path end
     Load(files, env)

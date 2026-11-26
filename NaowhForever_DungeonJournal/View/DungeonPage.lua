@@ -14,12 +14,13 @@ local TRASH_TOP, TRASH_GAP = 6, 16
 local EMPTY_BODY = 28
 local DETAIL_TOP = 8
 local SKIPPED_TITLE = { missingBisOnly = ns.L("Nothing you're missing"), upgradesOnly = ns.L("Nothing that beats your gear"),
-    usableOnly = ns.L("Nothing for your class") }
+    usableOnly = ns.L("Nothing for your class"), lootMinLevel = ns.L("Nothing in your level range") }
 
 local TEXT_QUESTS = ns.L("Dungeon Quests")
 local TEXT_TRACKER = ns.L("Tracker")
 local TEXT_SHARE_ALL = ns.L("Share All")
 local TEXT_NO_QUESTS = ns.L("No quests here.")
+local TEXT_LOG_ONLY = ns.L("None of your quests are for this dungeon. Only My Quests at Max Level hides the rest.")
 local TEXT_REPUTATION = ns.L("Reputation")
 local TEXT_NO_BOSSES = ns.L("No boss data for this dungeon yet. It fills in with a later version of the addon.")
 local TEXT_BOSSES = ns.L("Bosses")
@@ -32,6 +33,7 @@ local TEXT_UPGRADES = ns.L("%d |4upgrade:upgrades; for you")
 local TEXT_HIDE_OTHERS = "Hide Other Classes' Items"
 local TEXT_SHOW_OTHERS = "Show Other Classes' Items"
 local TEXT_TRASH = "Trash"
+local TEXT_DONE_OF = "%d/%d"
 
 local EMPTY = {}
 local chipLabels = {}
@@ -46,6 +48,12 @@ end
 
 local function ShareAll(dungeon)
     J.Sharing.ShareAll(dungeon)
+end
+
+local function QuestCount(dungeon, list)
+    local done, total = Quests.Progress(dungeon.quests)
+    if total == 0 then return #list end
+    return TEXT_DONE_OF:format(done, total)
 end
 
 local function Inside(dungeon)
@@ -131,8 +139,8 @@ end
 
 function ViewMixin:DrawQuests(list)
     local open = S.Get("questsOpen")
-    self:Add("section", TEXT_QUESTS, #list, open, OpenQuests, TEXT_TRACKER, OpenTracker, self.dungeon, nil, nil,
-        IsInGroup() and TEXT_SHARE_ALL or nil, ShareAll)
+    self:Add("section", TEXT_QUESTS, QuestCount(self.dungeon, list), open, OpenQuests, TEXT_TRACKER, OpenTracker,
+        self.dungeon, nil, nil, IsInGroup() and TEXT_SHARE_ALL or nil, ShareAll)
     if open then
         for i = 1, #list do self:Add("quest", list[i], i) end
     end
@@ -142,7 +150,8 @@ end
 function ViewMixin:QuestList(dungeon)
     if not dungeon.quests then return EMPTY end
     local withDone = not (self.tracker or self.tight) and S.Get("showDoneQuests")
-    local list = Quests.List(dungeon.quests, self.questList, self.questPool, withDone, S.Get("showLowQuests"))
+    local logOnly = self.tracker and J.QuestTracker.LogOnly()
+    local list = Quests.List(dungeon.quests, self.questList, self.questPool, withDone, S.Get("showLowQuests"), logOnly)
     self.questSignature = Quests.Signature(dungeon.quests)
     self.questsDrawn = true
     return list
@@ -182,7 +191,7 @@ end
 function ViewMixin:DrawAside(dungeon)
     self:Begin(dungeon, nil)
     local list = self:QuestList(dungeon)
-    self:Add("section", TEXT_QUESTS, #list, nil, nil, TEXT_TRACKER, OpenTracker, dungeon, nil, nil,
+    self:Add("section", TEXT_QUESTS, QuestCount(dungeon, list), nil, nil, TEXT_TRACKER, OpenTracker, dungeon, nil, nil,
         IsInGroup() and TEXT_SHARE_ALL or nil, ShareAll)
     if #list == 0 then self:Note(dungeon.quests and Quests.NoneWhy(dungeon.quests) or TEXT_NO_QUESTS) end
     for i = 1, #list do
@@ -220,7 +229,10 @@ function ViewMixin:DrawTracker(dungeon)
     self:Begin(dungeon, nil)
     self.tight = true
     local list = self:QuestList(dungeon)
-    if #list == 0 then self:Note(Quests.NoneWhy(dungeon.quests) or TEXT_NO_QUESTS) end
+    if #list == 0 then
+        local done, total = Quests.Progress(dungeon.quests)
+        self:Note(J.QuestTracker.LogOnly() and done < total and TEXT_LOG_ONLY or Quests.NoneWhy(dungeon.quests) or TEXT_NO_QUESTS)
+    end
     for i = 1, #list do self:Add("quest", list[i], i) end
     self:Finish()
 end
@@ -230,7 +242,7 @@ function ViewMixin:DrawDungeonQuests(dungeon, list)
     if not dungeon.quests then return end
     local why = Quests.NoneWhy(dungeon.quests)
     if not why then return end
-    self:Section(TEXT_QUESTS, 0)
+    self:Section(TEXT_QUESTS, QuestCount(dungeon, list))
     self:Note(why)
     self:Space(SECTION_SPACE)
 end
@@ -299,7 +311,8 @@ function ViewMixin:DrawSkipped()
     if #skipped == 0 then return end
     self:Space(BOSS_LOOT_GAP)
     local filters = self.filters
-    local key = filters.missingBis and "missingBisOnly" or filters.upgradesOnly and "upgradesOnly" or "usableOnly"
+    local key = filters.missingBis and "missingBisOnly" or filters.upgradesOnly and "upgradesOnly"
+        or (filters.minLevel > 0 or filters.maxLevel > 0) and "lootMinLevel" or "usableOnly"
     self:Add("skipped", SKIPPED_TITLE[key], key, self.skippedBoss, skipped)
     self:Space(BOSS_LOOT_GAP)
 end

@@ -99,8 +99,16 @@ Core/Integrations/RestedXP/
   `SetStep`, `UpdateGuideWindow`, `UpdateActiveStepsFrame`, `UpdatePlayerActiveStepItem` and the
   rows' text. The first four are RestedXP building what it shows and the last is a counter ticking:
   only the first four make the redraw read RestedXP's steps and walk its windows again (`Rebuilt`).
-  The window needs RestedXP's V2 interface (`v2:IsEnabled()`, `v2:IsGuideWindowEnabled()` before
-  RestedXP 4.11.38): the active step rows and the guide's rows are built for it.
+  The window needs RestedXP's V2 interface (`v2:IsEnabled()`, which RestedXP 4.11.38 renamed from
+  `v2:IsGuideWindowEnabled()`, so the new name is asked first and the old one when there is no new one): the
+  active step rows and the guide's rows are built for it.
+- A player who turned the window on and has none is told why, in chat, once for each reason (`Tell`, from `Apply`, so
+  at login and when the switch is turned on): RestedXP's V2 interface is off (`ns.RXPWindowWhy`), or RestedXP has
+  none of the names we know for that switch, which is what a RestedXP update that renames it looks like. Until
+  4.11.38's rename it was silent: the window just did not show. Off is not said while Naowh is about to turn
+  that interface on at the next reload (`ns.RXPSetUpPending`), as that reload is the answer. Nothing is said unless
+  RestedXP is loaded (`C_AddOns.IsAddOnLoaded`): an installed RestedXP that is disabled has no interface to be off
+  or to have changed, and `DoesAddOnExist` is true for it.
 - The list under the active step is the guide's steps as `v2:BuildGuideStepsSnapshot` has them, which
   is what RestedXP's own v2 guide window lists: a step it hides is not listed, and a step done is, a
   little dimmer, so that a step can be gone back to. It starts at the first step after the active one
@@ -219,9 +227,12 @@ Core/Integrations/RestedXP/
   thing counted twice beside the guide's. The box's own opacity is a setting (`rxpWindowBoxOpacity`) and
   not a part of its color. The bars are in the Naowh Gradient to start (`GRADIENT`, which is `ns.MEDIA`'s,
   so a texture of SharedMedia is only needed when another is wanted).
-- RestedXP's logo (`Textures/rxp_logo-64`, the one its own window and quest log use) is drawn from
-  RestedXP's files in the top right corner of the current step's box (the first, when there are more),
-  untinted, at a fixed size (`LOGO_SIZE`). It is a texture of the
+- RestedXP's logo is the one its own V2 window has in its header, the active theme's (`v2:GetTheme().guideWindow.logo`:
+  the new icon `Textures/v2/rxp-icon-logo` for its default theme, its older `rxp_logo-64` for the themes made from
+  the old ones, as Naowh's are; the older one when RestedXP gives none), read again at each draw so that a theme
+  picked later has its own, and drawn from RestedXP's files with the smooth filter (`TRILINEAR`) it draws it with,
+  in the top right corner of the current step's box (the first, when there are more), untinted, at a fixed size
+  (`LOGO_SIZE`). It is a texture of the
   box, so it is above the box's background, and the rows start below it, or below the label when it is
   smaller. The window hides RestedXP's own and so would otherwise show nothing of it anywhere.
 - The rows after the first of a step are set in (`INDENT`, fixed), and narrower by as much, so a
@@ -374,6 +385,11 @@ Core/Integrations/RestedXP/
   until one is picked), the window is shown as that: "No guide selected" and a line, Pick a guide, which
   opens RestedXP's list of guides (`v2:ShowGuideSelectionMenu`, the one its welcome window opens on a right
   click, or its menu when it has none) with a plain click: there is nothing to skip, so it takes no shift.
+- A row of a link element (RestedXP's `.link`, such as a video guide) opens the link with a plain left click, as
+  RestedXP's own window does, through `comms.OpenLink` (its popup to copy the address from) or, before RestedXP had
+  that, `RXP.url` and its `RXP_Link` popup, and its tooltip is the address. Shift is still the skip, and a right
+  click the menu. The row has the address by `WindowModel` only when the element's tag is `link`, and the rows
+  are pooled, so each draw sets it again.
 - The title is the guide's group (`subgroup`, "Speedrun Guide 30-40") when RestedXP has one and no `title`,
   and the guide within it ("35-37 Northern Stranglethorn", `GetGuideName`) is then a muted line under it,
   as RestedXP's own windows show both. A name the same as the group, or none, leaves the title alone. The

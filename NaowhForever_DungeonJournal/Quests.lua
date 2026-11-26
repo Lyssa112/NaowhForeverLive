@@ -12,6 +12,7 @@ local QUEST = J.C.QUEST
 local PERCENT = J.C.PERCENT
 local ID, NAME, LEVEL, SIDE, WHERE = QUEST.ID, QUEST.NAME, QUEST.LEVEL, QUEST.SIDE, QUEST.WHERE
 local MAP, X, Y = QUEST.MAP, QUEST.X, QUEST.Y
+local TIPS = J.QuestTips
 
 local RANK = { prereq = 1, prereqLog = 2, low = 3, pickup = 4, next = 5, active = 6, ready = 7, lost = 8, done = 9 }
 local PIN_RANK = { ready = 1, pickup = 2, tooHigh = 3, active = 4, low = 5, prereq = 6, none = 7 }
@@ -44,6 +45,7 @@ local TEXT_JOIN = ", "
 local TEXT_LOST_IF = ns.L("Lost if you take %s first.")
 local TEXT_LOSES = ns.L("Taking it loses %s for good.")
 local TEXT_ONE_VERSION = ns.L("Only one of its versions can be done: taking another loses it.")
+local TEXT_STEP_TIP = "%s: %s"
 
 local requested = {}
 local paths = {}
@@ -116,8 +118,16 @@ local function ForRace(mask, unit)
     return not bit or math.floor(mask / 2 ^ bit) % 2 == 1
 end
 
+local function ForClass(need, class)
+    if type(need) ~= "table" then return need == nil or need == class end
+    for i = 1, #need do
+        if need[i] == class then return true end
+    end
+    return false
+end
+
 local function ForMe(quest, class, faction, unit)
-    if quest.class and quest.class ~= class then return false end
+    if not ForClass(quest.class, class) then return false end
     if quest.races and not ForRace(quest.races, unit or "player") then return false end
     return ForSide(quest[SIDE], faction)
 end
@@ -323,6 +333,11 @@ local function ByRank(a, b)
     return a.index < b.index
 end
 
+local function CountClass(class)
+    if not noneClasses[class] then noneOrder[#noneOrder + 1] = class end
+    noneClasses[class] = (noneClasses[class] or 0) + 1
+end
+
 local function CountOthers(quests, faction)
     wipe(noneClasses)
     wipe(noneOrder)
@@ -330,9 +345,10 @@ local function CountOthers(quests, faction)
     for i = 1, #quests do
         local quest = quests[i]
         local class = quest.class
-        if class then
-            if not noneClasses[class] then noneOrder[#noneOrder + 1] = class end
-            noneClasses[class] = (noneClasses[class] or 0) + 1
+        if type(class) == "table" then
+            for c = 1, #class do CountClass(class[c]) end
+        elseif class then
+            CountClass(class)
         elseif not ForSide(quest[SIDE], faction) then
             other = other + 1
         end
@@ -352,6 +368,15 @@ local LoggedID = Q.LoggedID
 
 function Q.MinLevel(quest)
     return J.QuestMinLevel[quest[ID]]
+end
+
+function Q.MinRep(quest)
+    return J.QuestMinRep[quest[ID]]
+end
+
+function Q.Inside(id)
+    local area = J.QuestInside[id]
+    return area and C_Map.GetAreaInfo(area)
 end
 
 function Q.Kind(quest)
@@ -404,6 +429,8 @@ local function Listed(quest, kind, class, faction, withDone, withLow)
     return ForMe(quest, class, faction) and (withDone or kind ~= "done")
         and (withLow or not (ToPickUp(kind) and Grey(quest) and not quest.turnin))
 end
+
+Q.ForClass = ForClass
 
 function Q.ForMe(quest)
     local _, class = UnitClass("player")
@@ -580,14 +607,14 @@ local function FillEntry(entry, quest, kind, index, level)
     entry.step, entry.steps = step, chain and #chain
 end
 
-function Q.List(data, out, pool, withDone, withLow)
+function Q.List(data, out, pool, withDone, withLow, logOnly)
     wipe(out)
     local _, class = UnitClass("player")
     local faction = UnitFactionGroup("player")
     local level = UnitLevel("player")
     for index, quest in ipairs(data.quests) do
         local kind = Kind(quest)
-        if Listed(quest, kind, class, faction, withDone, withLow) then
+        if Listed(quest, kind, class, faction, withDone, withLow) and (InLog(kind) or not logOnly) then
             local n = #out + 1
             local entry = pool[n] or {}
             pool[n] = entry
@@ -721,9 +748,29 @@ function Q.Open(kind)
 end
 local Open = Q.Open
 
-function Q.Warnings(quest, out)
-    wipe(out)
-    if not (S.Get("questHelp") and Open(Kind(quest))) then return out end
+local function TippedStep(step)
+    if type(step) ~= "table" then return step end
+    for i = 1, #step do
+        if TIPS[step[i]] then return step[i] end
+    end
+    return step[1]
+end
+
+local function AddTips(quest, out)
+    local id = quest[ID]
+    if TIPS[id] then out[#out + 1] = TIPS[id] end
+    local steps = Chain(quest)
+    for i = 1, steps and #steps or 0 do
+        local state, step = StepState(steps[i])
+        if state ~= "done" then
+            if state == "todo" then step = TippedStep(steps[i]) end
+            if step ~= id and TIPS[step] then out[#out + 1] = TEXT_STEP_TIP:format(StepName(step), TIPS[step]) end
+            return
+        end
+    end
+end
+
+local function LostLines(quest, out)
     local name, versions = quest[NAME], false
     for _, other in ipairs(J.QuestClosedBy[quest[ID]] or EMPTY) do
         local record = QuestByID(other)
@@ -740,5 +787,14 @@ function Q.Warnings(quest, out)
             out[#out + 1] = TEXT_LOSES:format(Q.Name(record))
         end
     end
+end
+
+function Q.Warnings(quest, out)
+    wipe(out)
+    if not S.Get("questHelp") then return out end
+    local kind = Kind(quest)
+    if kind == "done" or kind == "lost" then return out end
+    if Open(kind) then LostLines(quest, out) end
+    AddTips(quest, out)
     return out
 end

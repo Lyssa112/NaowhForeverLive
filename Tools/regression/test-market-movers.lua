@@ -1,4 +1,4 @@
--- Run with Lua 5.1 from the repository root: Price Graph's movers, the items whose lowest price changed most
+-- Run with Lua 5.1 from the repository root: Price Graph's movers, the items whose median price changed most
 -- between the last two days The Market has prices for (History.Movers).
 local World = dofile("Tools/regression/market_world.lua")
 
@@ -43,11 +43,9 @@ Check("an item priced on one of the days alone has nothing to compare", movers.c
     and movers.change[11] == nil)
 Check("the same lists come back until the history changes", H.Movers() == movers)
 
-t.now = START + DAY + 60
-t.scan = { [3] = 400 }
-H.Seen({ 3 }, 1)
+Scan(1, { [3] = 400 }, nil, 60)
 movers = H.Movers()
-Check("a price seen since moves the lists", List(movers.dropped) == "3,1,7,10" and movers.change[3] == -60)
+Check("a later scan that day moves the lists", List(movers.dropped) == "3,1,7,10" and movers.change[3] == -60)
 
 Scan(4, { [1] = 250, [7] = 1800 }, {})
 movers = H.Movers()
@@ -88,26 +86,46 @@ q = World.Setup()
 Q = q.M.History
 q.scan, q.scanAt = { [1] = 1000, [2] = 1000 }, START
 Q.Record()
-q.now = START + DAY + 7200
-q.scan = { [1] = 900, [2] = 1000 }
-Q.Seen({ 1 }, 1)
 q.scan, q.scanAt = { [1] = 900, [2] = 500 }, START + DAY + 3600
-Check("prices from before the last sighting are still recorded, on the sighting's day",
-    Q.Record() == true and Q.Change(2, 7) == -50 and Q.Change(1, 7) == -10)
+Check("a later scan is recorded on its own day", Q.Record() == true and Q.Change(2, 7) == -50
+    and Q.Change(1, 7) == -10)
 Check("and only once", Q.Record() == false)
-q.now = START + 2 * DAY
-Q.Seen({ 1 }, 1)
-q.scan, q.scanAt = { [1] = 100, [2] = 100 }, START + DAY + 7200
-Check("but never on a later day than their own", Q.Record() == false and Q.Change(1, 7) == -10)
+q.scan, q.scanAt = { [1] = 100, [2] = 100 }, START + DAY
+Check("and an older one never is", Q.Record() == false and Q.Change(1, 7) == -10)
 
 q = World.Setup()
 Q = q.M.History
 q.account.marketHistory = { ["Realm-Horde"] = { at = START, days = { [20000] = { [1] = 1000 } } } }
 q.scan, q.scanAt = { [1] = 500 }, START
-Check("history saved before sightings does not record its last prices again", Q.Record() == false)
-q.now = START + 60
-Q.Seen({ 1 }, 1)
-Check("nor after a sighting", Q.Record() == false)
+Check("saved history does not record its last prices again", Q.Record() == false)
+
+q = World.Setup({ quality = { [30] = 0, [29] = 1, [130] = 1, [25] = false } })
+Q = q.M.History
+first, second = {}, {}
+for id = 1, 30 do
+    first[id], second[id] = 10000, 10000 - id * 100
+    first[100 + id], second[100 + id] = 10000, 10000 + id * 100
+end
+q.scan, q.scanAt = first, START
+Q.Record()
+q.scan, q.scanAt = second, START + DAY
+Q.Record()
+movers = Q.Movers()
+local function Has(list, id)
+    for _, v in ipairs(list) do if v == id then return true end end
+end
+Check("poor and common items are no movers", movers.change[30] == nil and movers.change[29] == nil
+    and movers.change[130] == nil)
+Check("and the lists still fill to their top few without them", #movers.dropped == 20 and movers.dropped[20] == 9
+    and #movers.rose == 20 and movers.rose[20] == 110)
+Check("an item not loaded yet is kept", Has(movers.dropped, 25))
+q.quality[25] = 2
+movers = Q.Movers()
+Check("and stays when it loads as uncommon", Has(movers.dropped, 25) and movers.dropped[20] == 9)
+q.quality[25] = 1
+movers = Q.Movers()
+Check("until it loads as common, when the lists are found again", not Has(movers.dropped, 25)
+    and movers.dropped[20] == 8)
 
 q = World.Setup()
 Q = q.M.History

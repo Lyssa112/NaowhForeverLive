@@ -227,6 +227,7 @@ local function Fixture(opts)
         UnitIsVisible = function() return true end,
         UnitIsUnit = function(a, b) return a == b end,
         UnitName = function(unit) return unit == "player" and "Tester" or unit end,
+        UnitFullName = function(unit) return unit == "player" and "Tester" or unit, unit == "player" and "Surname" or nil end,
         UnitExists = function(unit) return unit ~= "target" or state.target ~= nil end,
         UnitCanAttack = function() return true end,
         UnitClassification = function() return state.target end,
@@ -1445,6 +1446,22 @@ do
     Check("shadowform talented", t.Shown(), "spell:588 spell:15473")
 end
 
+-- Demonic Sacrifice: off until picked; any demon's sacrifice buff counts, and a click casts the sacrifice.
+do
+    local known = { [687] = true, [18788] = true }
+    local t = Fixture({ units = { player = "WARLOCK" }, known = known, auras = { player = { { 687, 1700, 1800 } } } })
+    t.Login()
+    Check("demonic sacrifice is off until picked", t.Shown(), "")
+    t = Fixture({ settings = { personalBuffPicks = { demonicSacrifice = true } }, units = { player = "WARLOCK" },
+        known = known, auras = { player = { { 687, 1700, 1800 } } } })
+    t.Login()
+    Check("no sacrifice buff", t.Shown(), "spell:18788")
+    t.state.auras.player = { { 687, 1700, 1800 }, { 18790, 1700, 1800 } }
+    t.Fire("UNIT_AURA", "player")
+    t.Advance(0.5)
+    Check("voidwalker sacrificed", t.Shown(), "")
+end
+
 -- Poisons: every equipped weapon needs one; an expiring poison wakes the row.
 do
     local t = Fixture({ units = { player = "ROGUE" }, known = { [2842] = true }, weapons = { [16] = false } })
@@ -1785,7 +1802,7 @@ do
         if row.key == "personalBuffPicks" then fields[#fields + 1] = row.field end
     end
     Check("shaman picks come first, then every other class", table.concat(fields, " "),
-        "imbue shield demonArmor firestone spellstone mageArmor poisons battleShout innerFire shadowform aspect trueshot huntersMark thorns righteousFury")
+        "imbue shield demonArmor demonicSacrifice firestone spellstone mageArmor poisons battleShout innerFire shadowform aspect trueshot huntersMark thorns righteousFury")
     local extra
     for _, row in ipairs(card.rows) do
         if row.key == "personalBuffExtra" then extra = row end
@@ -2451,10 +2468,10 @@ do
     Check("another class: no role events", mage.Listening("PLAYER_ROLES_ASSIGNED"), false)
 end
 
--- Righteous Fury: only with Improved Righteous Fury learned, or while you are the group's tank.
+-- Righteous Fury: only with Redoubt learned, or while you are the group's tank.
 do
     local PICKED = { personalBuffPicks = { righteousFury = true } }
-    local unpicked = Fixture({ units = { player = "PALADIN" }, known = { [25780] = true, [20468] = true } })
+    local unpicked = Fixture({ units = { player = "PALADIN" }, known = { [25780] = true, [20127] = true } })
     unpicked.Login()
     Check("off until picked", unpicked.Shown(), "")
     Check("off: no role events", unpicked.Listening("PLAYER_ROLES_ASSIGNED"), false)
@@ -2487,14 +2504,14 @@ do
     Check("no longer the tank: gone", healer.Shown(), "")
 
     local talented = Fixture({ settings = PICKED, units = { player = "PALADIN" },
-        known = { [25780] = true, [20468] = true } })
+        known = { [25780] = true, [20127] = true } })
     talented.Login()
-    Check("Improved Righteous Fury learned, solo: on you", talented.Shown(), "spell:25780")
+    Check("Redoubt learned, solo: on you", talented.Shown(), "spell:25780")
     talented.Set("personalBuffPicks", { righteousFury = false })
     Check("unpicked: nothing", talented.Shown(), "")
     Check("unpicked: no role events", talented.Listening("PLAYER_ROLES_ASSIGNED"), false)
 
-    local mage = Fixture({ settings = PICKED, units = { player = "MAGE" }, known = { [25780] = true, [20468] = true } })
+    local mage = Fixture({ settings = PICKED, units = { player = "MAGE" }, known = { [25780] = true, [20127] = true } })
     mage.Login()
     Check("another class: no role events", mage.Listening("PLAYER_ROLES_ASSIGNED"), false)
 end
@@ -2554,6 +2571,8 @@ do
     t.Fire("BAG_UPDATE_DELAYED"); t.Advance(0.5)
     Check("professions not read yet: the record is kept", t.ns.AccountSettings().professionCooldowns["Tester-Realm"]
         and t.ns.AccountSettings().professionCooldowns["Tester-Realm"].ready.mooncloth ~= nil, true)
+    Check("the record names the character with their surname",
+        t.ns.AccountSettings().professionCooldowns["Tester-Realm"].name, "Tester Surname")
     t.state.professions = { TAILORING }
     t.Fire("BAG_UPDATE_DELAYED"); t.Advance(0.5)
     Check("and shows again once they read", t.Shown(), "spell:" .. MOONCLOTH)

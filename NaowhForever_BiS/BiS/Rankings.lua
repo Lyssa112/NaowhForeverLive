@@ -37,7 +37,7 @@ local craftIDs, questIDs, worldIDs
 local dropDungeon = {}
 local places, details = {}, {}
 local nextPlaces, byName, placePool = {}, {}, {}
-local routePlaces, routeByName, routePool, routeAt, routePicks, routeTaken = {}, {}, {}, {}, {}, {}
+local routePlaces, routeByName, routePool, routeAt, routePicks = {}, {}, {}, {}, {}
 local R = {}
 
 local function ByRank(a, b)
@@ -108,8 +108,8 @@ local function Wieldable(itemClass, slot)
     return not (slot == OFF_HAND and itemClass == WEAPON and not DUAL_WIELD[playerClass])
 end
 
-local function Near(item, level, near)
-    return not near or math.abs(item[FACT_REQUIRED] - level) <= NEAR_LEVELS
+local function Near(id, item, level, near)
+    return not near or math.abs((ns.BiSQuestLevels[id] or item[FACT_REQUIRED]) - level) <= NEAR_LEVELS
 end
 
 local function Owned(slot, id)
@@ -216,14 +216,58 @@ function R.OtherSideQuest(itemID)
     return Place(ns.BiSSource(itemID) or WORLD_DROP) == OTHER_SIDE_QUEST[UnitFactionGroup("player")]
 end
 
+function R.OtherClassQuest(itemID)
+    local quest = ns.BiSClassQuests[itemID]
+    if not quest then return false end
+    local classBit = 2 ^ (select(CLASS_ID, UnitClass("player")) - 1)
+    return math.floor(quest[QUEST_CLASSES] / classBit) % 2 == 0
+end
+
 function R.Candidates(slot, spec)
     local ids = {}
     for _, id in ipairs(spec and spec.slots[slot] or EMPTY) do
-        if C_Item.GetItemInfoInstant(id) and not R.OtherSideQuest(id) then
+        if C_Item.GetItemInfoInstant(id) and not R.OtherSideQuest(id) and not R.OtherClassQuest(id) then
             ids[#ids + 1] = id
         end
     end
     return ids
+end
+
+function R.PreRaid(key)
+    local preRaid
+    for _, spec in ipairs(ns.BiSData.specs) do
+        if spec.key == key then
+            preRaid = spec.preRaid
+            break
+        end
+    end
+    if not preRaid then return nil end
+    local slots, extra = {}, {}
+    for _, gear in ipairs(Items.GEAR_SLOTS) do
+        local slot = gear[1]
+        local partner = slots[Items.PAIR[slot]]
+        for _, id in ipairs(preRaid[slot] or EMPTY) do
+            if id ~= partner and C_Item.GetItemInfoInstant(id) and not R.OtherSideQuest(id)
+                and not R.OtherClassQuest(id) then
+                if not slots[slot] then
+                    slots[slot] = id
+                else
+                    extra[slot] = extra[slot] or {}
+                    extra[slot][#extra[slot] + 1] = id
+                end
+            end
+        end
+    end
+    for slot, partner in pairs(Items.PAIR) do
+        local backups = extra[slot] or EMPTY
+        for i = #backups, 1, -1 do
+            if backups[i] == slots[partner] then table.remove(backups, i) end
+        end
+        if extra[slot] and #extra[slot] == 0 then extra[slot] = nil end
+    end
+    local main = slots[C.MAIN_HAND]
+    if main and Items.IsTwoHand(main) then slots[OFF_HAND], extra[OFF_HAND] = nil, nil end
+    return slots, extra
 end
 
 local function Offered(pool, slot, ranked, near)
@@ -234,7 +278,7 @@ local function Offered(pool, slot, ranked, near)
     for _, id in ipairs(pool) do
         local item = Facts(id)
         if item and not skip[id] and IsGear(item) and R.Usable(playerClass, item) and Fits(id, slot)
-            and Wieldable(item[FACT_CLASS], slot) and Near(item, level, near) then
+            and Wieldable(item[FACT_CLASS], slot) and Near(id, item, level, near) then
             ids[#ids + 1] = id
         end
     end
@@ -290,10 +334,19 @@ function R.WorldDrops(slot, ranked, near)
     return Offered(worldIDs, slot, ranked, near)
 end
 
+local function OtherSide(itemID)
+    local seller = ns.BiSOtherSide[UnitFactionGroup("player")]
+    return seller and seller[itemID]
+end
+
 function ns.BiSSource(itemID)
-    local craft, quest = ns.BiSCrafts[itemID], ns.BiSClassQuests[itemID]
-    return Drops()[itemID] or ns.BiSData.sources[itemID] or ns.BiSLeveling.sources[itemID] or craft and craft[FACT_SOURCE]
-        or quest and quest[FACT_SOURCE] or ns.BiSWorldDrops[itemID] and WORLD_DROP
+    local craft, quest, other = ns.BiSCrafts[itemID], ns.BiSClassQuests[itemID], OtherSide(itemID)
+    return Drops()[itemID] or other and other.source or ns.BiSData.sources[itemID] or ns.BiSLeveling.sources[itemID]
+        or craft and craft[FACT_SOURCE] or quest and quest[FACT_SOURCE] or ns.BiSWorldDrops[itemID] and WORLD_DROP
+end
+
+function R.Spot(itemID)
+    return OtherSide(itemID) or ns.BiSSpots[itemID]
 end
 
 function R.DropDungeon(itemID)
@@ -312,7 +365,8 @@ end
 
 function R.ReqLevel(itemID)
     local item = Facts(itemID)
-    return item and item[FACT_REQUIRED] or select(INFO_MIN_LEVEL, C_Item.GetItemInfo(itemID))
+    return ns.BiSQuestLevels[itemID] or item and item[FACT_REQUIRED]
+        or select(INFO_MIN_LEVEL, C_Item.GetItemInfo(itemID))
 end
 
 function R.ItemLevel(itemID)
@@ -359,13 +413,11 @@ function R.Route(list)
     for _, gear in ipairs(Items.GEAR_SLOTS) do
         local slot = gear[1]
         local picks = Counted(slot, idle) and B.Picks(list, slot, routePicks) or EMPTY
-        local taken = wipe(routeTaken)
         for rank = 1, #picks do
             local id = picks[rank]
             if Owned(slot, id) then break end
             local name, kind = PlaceOf(id)
-            if name and not taken[name] then
-                taken[name] = true
+            if name then
                 local place = routeByName[name] or NewPlace(found, routeByName, routePool, name, kind, id)
                 AddToPlace(place, slot, id, rank)
                 place.level = math.min(place.level, R.ReqLevel(id) or math.huge)

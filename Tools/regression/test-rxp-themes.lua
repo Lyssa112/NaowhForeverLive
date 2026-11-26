@@ -86,7 +86,8 @@ local function Load(account, installed, existing, fonts)
         STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF",
         CreateColor = function(r, g, b, a) return { r, g, b, a } end,
         hooksecurefunc = function(tbl, name, fn) hooked[#hooked + 1] = { tbl, name, fn } end,
-        C_AddOns = { DoesAddOnExist = function(name) return installed and name == "RXPGuides" end },
+        C_AddOns = { DoesAddOnExist = function(name) return installed and name == "RXPGuides" end,
+            IsAddOnLoaded = function(name) return installed and name == "RXPGuides" end },
         NaowhForeverDB = { account = account, profiles = {}, charActive = {} } }
     env._G = env
     env.InCombatLockdown = function() return env.inCombat == true end
@@ -103,6 +104,7 @@ local function Load(account, installed, existing, fonts)
     local features = assert(loadstring(featuresSource, "Features"))
     setfenv(features, env)
     features()
+    env.NaowhForever.Print = function() end
     local coreFrames = #frames
     local module = assert(loadstring(moduleSource, "RXPThemes"))
     setfenv(module, env)

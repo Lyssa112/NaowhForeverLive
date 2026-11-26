@@ -46,7 +46,7 @@ local function Object(everything)
     end
     function o:SetTextColor(r, g, b) self.color = { r, g, b } end
     function o:SetColorTexture(r, g, b, a) self.solid = { r, g, b, a } end
-    function o:SetTexture(path) self.texture = path end
+    function o:SetTexture(path, _, _, filter) self.texture, self.filter = path, filter end
     function o:RegisterForClicks(...) self.clicksFor = { ... } end
     function o:GetTexture() return self.texture end
     function o:RegisterForDrag(...) self.dragFor = { ... } end
@@ -139,7 +139,10 @@ local function World(account, opts)
     w.reported = {}
     env.geterrorhandler = function() return function(e) w.reported[#w.reported + 1] = tostring(e) end end
     env.IsShiftKeyDown = function() return w.shift == true end
-    env.C_AddOns = { DoesAddOnExist = function(name) return opts.installed ~= false and name == "RXPGuides" end }
+    env.C_AddOns = {
+        DoesAddOnExist = function(name) return opts.installed ~= false and name == "RXPGuides" end,
+        IsAddOnLoaded = function(name) return opts.installed ~= false and not opts.disabled and name == "RXPGuides" end,
+    }
     env.C_Timer = { After = function(_, fn) w.timers[#w.timers + 1] = fn end }
     env.SetItemRef = function(link) w.links[#w.links + 1] = link end
     w.items = {}
@@ -214,6 +217,7 @@ local function World(account, opts)
         setfenv(chunk, env)
         chunk("NaowhForever")
     end
+    if opts.setupPending then ns.RXPSetUpPending = function() return true end end
     local make = env.CreateFrame
     env.CreateFrame = function() return Object(w.everything) end
     local icons = assert(loadstring(iconsSource, "Icons"))
@@ -241,6 +245,14 @@ local function Rxp(w, opts)
     local buy = { text = "Buy", tag = "buy", frame = Row("Buy [Refreshing Spring Water] from her", "buy", "|Tbuy|t", false) }
     local vendor = { text = "Vendor Trash", tag = "vendor", frame = Row("Vendor Trash", "vendor", "|Tv|t", true) }
     local active = { active = true, index = 36, title = "Step 36", elements = { talk, buy, vendor } }
+    if opts.link then
+        w.video = { text = "Click here for a video guide", tag = "link", url = "https://youtu.be/abc",
+            frame = Row("Click here for a video guide", "link", "|Tlink|t", false) }
+        w.decoy = { text = "Not a link", tag = "target", url = "https://not.a/link",
+            frame = Row("Not a link", "target", "|Ttalk|t", false) }
+        w.odd = { text = "Odd link", tag = "link", url = true, frame = Row("Odd link", "link", "|Tlink|t", false) }
+        active.elements = { talk, buy, vendor, w.video, w.decoy, w.odd }
+    end
     local tipOnly = { active = true, index = 37, hidewindow = true, elements = { { text = "A tip" } } }
     local idle = { active = false, index = 38, elements = { { text = "Not active" } } }
     local rows = {}
@@ -261,9 +273,19 @@ local function Rxp(w, opts)
         v2 = { snapshots = 0 },
         SetStep = function() end,
     }
+    w.themeLogo = "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo"
+    if not opts.noTheme then
+        function rxp.v2:GetTheme()
+            if opts.themeRaises then error("theme") end
+            if opts.themeBare then return {} end
+            if opts.themeNoLogo then return { guideWindow = {} } end
+            return { guideWindow = { logo = opts.logo ~= nil and opts.logo or w.themeLogo } }
+        end
+    end
     function rxp.GetGuideProgress() return 36, "id" end
     function rxp.GetGuideName(guide) return guide.name end
-    rxp.v2[opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled"] = function() return opts.v2 ~= false end
+    local switch = opts.v2Switch or (opts.oldV2 and "IsGuideWindowEnabled" or "IsEnabled")
+    rxp.v2[switch] = function() return opts.v2 ~= false end
     function rxp.v2:BuildGuideStepsSnapshot()
         self.snapshots = self.snapshots + 1
         if opts.snapshotRaises then error("snapshot") end
@@ -276,7 +298,7 @@ local function Rxp(w, opts)
     end
     function rxp.v2:UpdateActiveStepsFrame() end
     function rxp.v2:UpdatePlayerActiveStepItem() end
-    env.RXP = rxp
+    env.RXP = not opts.disabled and rxp or nil
     -- RestedXP's two v2 windows, with children that take the mouse
     local guide = { frame = Object(w.everything) }
     local button = Object(w.everything)
@@ -430,6 +452,53 @@ do
     w.ns.RXPWindowRefresh()
     Flush(w)
     Check(f.title.text == "Fishing" and f.subtitle.shown == false, "a guide with a title of its own has one line")
+end
+
+-- a player who turned the window on and sees none is told why, once for each reason
+do
+    local w = Start({ rxpWindow = true }, { v2 = false })
+    Check(Window(w) == nil and #w.printed == 1 and w.printed[1]:find("V2 interface is off", 1, true),
+        "RestedXP's V2 interface off: the window is not there, and the player is told why")
+    w.ns.RXPWindowStart()
+    w.ns.SetRXPWindow(true)
+    Check(#w.printed == 1, "and told once")
+    w.rxp.v2.IsEnabled = nil
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2 and w.printed[2]:find("changed the interface", 1, true),
+        "the switch gone under every name we know: told that RestedXP changed, which is the other reason")
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2, "and that once too")
+    w.rxp.v2.IsEnabled = function() return true end
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 2 and Window(w) ~= nil, "the interface on: the window is built and nothing more is said")
+
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown" })
+    Check(#w.printed == 1 and w.printed[1]:find("changed the interface", 1, true) and Window(w) == nil,
+        "a RestedXP with another name for it: told it changed")
+    w = Start({ rxpWindow = true })
+    Check(#w.printed == 0 and Window(w) ~= nil, "ready: nothing is said")
+    w = Start({}, { v2 = false })
+    Check(#w.printed == 0, "the window not turned on: nothing is said")
+    w = Start({ rxpWindow = true }, { v2 = false, installed = false })
+    Check(#w.printed == 0, "RestedXP not there: nothing is said")
+    w = Start({ rxpWindow = true }, { v2 = false, disabled = true })
+    Check(#w.printed == 0 and Window(w) == nil,
+        "RestedXP installed and disabled: nothing is said, it has no interface to be off or to have changed")
+    w = Start({ rxpWindow = true }, { disabled = true })
+    Check(#w.printed == 0, "disabled and RestedXP's global not there: nor is it said to have changed")
+
+    w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
+    Check(#w.printed == 0, "off while Naowh turns it on at the next reload: nothing, the reload says so")
+    w.ns.RXPSetUpPending = function() return false end
+    w.ns.RXPWindowStart()
+    Check(#w.printed == 1 and w.printed[1]:find("V2 interface is off", 1, true),
+        "and told when it is not coming after all")
+    w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
+    w.ns.RXPSetUpPending = function() return false end
+    w.ns.SetRXPWindow(false)
+    Check(#w.printed == 0, "turned off, it is not told that it cannot show")
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown", setupPending = true })
+    Check(#w.printed == 1, "a changed RestedXP is told whatever is pending")
 end
 
 -- every text of the window is in the Addon Font
@@ -598,6 +667,47 @@ do
     Check(w.menus == 1, "a left click does not")
 end
 
+-- the logo is the one of RestedXP's active theme, as its own V2 window has it, drawn smooth as it draws it
+do
+    local function Logo(opts)
+        local w = Start({ rxpWindow = true }, opts)
+        local box
+        for _, o in ipairs(w.frames) do
+            if o.label and o.logo and Seen(o) then box = o end
+        end
+        return box.logo, w
+    end
+    local V2 = "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo"
+    local logo, w = Logo()
+    Check(logo.texture == V2 and logo.filter == "TRILINEAR", "the logo is the theme's, with its smooth filter")
+    -- a theme picked later has its own: the next draw, and the picture is not set again while it is the same
+    local sets, set = 0, logo.SetTexture
+    logo.SetTexture = function(self, ...)
+        sets = sets + 1
+        return set(self, ...)
+    end
+    w.themeLogo = "Interface/AddOns/RXPGuides/Textures/Hardcore/rxp_logo-64"
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    Check(logo.texture == w.themeLogo and sets == 1 and logo.filter == "TRILINEAR", "another theme: its logo at the next draw")
+    w.rxp.v2:UpdateGuideWindow()
+    Flush(w)
+    Check(sets == 1, "and it is not set again while it is the same")
+    -- what RestedXP does not give: its older logo
+    local function Older(opts, label)
+        local picture, world = Logo(opts)
+        Check(picture.texture:find("rxp_logo-64", 1, true) and picture.filter == "TRILINEAR", label)
+        return world
+    end
+    Older({ noTheme = true }, "a RestedXP that has no theme call: its older logo")
+    Older({ themeBare = true }, "a theme with no window part: the older")
+    Older({ themeNoLogo = true }, "a window part with no logo: the older")
+    Older({ logo = "" }, "a logo that is empty: the older")
+    Older({ logo = 5 }, "and one that is not text")
+    local raised = Older({ themeRaises = true }, "a theme that raises: the older logo")
+    Check(#raised.reported == 1 and raised.reported[1]:find("theme", 1, true), "and it is reported and not raised")
+end
+
 -- the size: the window scales as a whole and stays in the same place on the screen
 do
     local account = { rxpWindow = true, rxpWindowPos = { "TOPLEFT", "TOPLEFT", 300, -100 } }
@@ -621,6 +731,72 @@ do
         "with the window off the place that was kept follows the size")
     local sized = Start({ rxpWindow = true, rxpWindowScale = 125 })
     Check(Window(sized).scale == 1.25, "a saved size is the size it is built at")
+end
+
+-- a link of a step (a video guide) is opened by a click, as RestedXP's own window does
+do
+    local w = Start({ rxpWindow = true }, { link = true })
+    local rxp = w.rxp
+    local link, decoy, plain, odd
+    for _, o in ipairs(w.frames) do
+        if o.icon and o.text and o.bar and o.scripts.OnClick and o.shown ~= false then
+            local text = o.text.text or ""
+            if text:find("video guide", 1, true) then link = o end
+            if text:find("Not a link", 1, true) then decoy = o end
+            if text:find("Odd link", 1, true) then odd = o end
+            if text:find("Talk to", 1, true) then plain = o end
+        end
+    end
+    Check(link ~= nil and link.url == "https://youtu.be/abc", "the row of a link carries its address")
+    Check(decoy ~= nil and decoy.url == nil and plain ~= nil and plain.url == nil,
+        "and a row that is no link does not, whatever its element has")
+    Check(odd ~= nil and odd.url == nil, "nor a link whose address is not text")
+    local opened, went = {}, {}
+    rxp.comms = { OpenLink = function(url) opened[#opened + 1] = url end }
+    rxp.SetStep = function(n) went[#went + 1] = n end
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#opened == 1 and opened[1] == "https://youtu.be/abc" and #went == 0, "a click opens it, with no shift, and skips nothing")
+    local ns = w.ns
+    ns.SetRXPWindowOption("rxpWindowSkip", "click")
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#opened == 2 and #went == 0, "also where a plain click skips a step: the link is the row's")
+    ns.SetRXPWindowOption("rxpWindowSkip", "shift")
+    w.shift = true
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#opened == 2 and #went == 1 and went[1] == 37, "with shift it is the skip, as everywhere in the step")
+    w.shift = false
+    link.scripts.OnClick(link, "RightButton")
+    Check(#opened == 2 and w.menus == 1, "and a right click is the menu")
+    plain.scripts.OnClick(plain, "LeftButton")
+    Check(#opened == 2 and #went == 1, "a row with no link does what it did")
+    ns.SetRXPWindowOption("rxpWindowSkip", "click")
+    plain.scripts.OnClick(plain, "LeftButton")
+    Check(#opened == 2 and #went == 2 and went[2] == 37, "also where a plain click skips: the row of no link skips the step")
+    ns.SetRXPWindowOption("rxpWindowSkip", "shift")
+
+    w.env.GameTooltip.lines = nil
+    link.scripts.OnEnter(link)
+    Check(w.env.GameTooltip.owner == link and w.env.GameTooltip.lines[1] == "https://youtu.be/abc",
+        "the tooltip of a link is its address")
+    w.env.GameTooltip.owner = nil
+    ns.SetRXPWindowOption("rxpWindowTips", false)
+    link.scripts.OnEnter(link)
+    Check(w.env.GameTooltip.owner == nil, "and Show Tooltips turns it off")
+    ns.SetRXPWindowOption("rxpWindowTips", true)
+
+    -- RestedXP before it had OpenLink: its own popup, with the address where its popup reads it
+    rxp.comms = nil
+    local popup
+    w.env.StaticPopup_Show = function(name) popup = { name = name, url = rxp.url } end
+    link.scripts.OnClick(link, "LeftButton")
+    Check(popup and popup.name == "RXP_Link" and popup.url == "https://youtu.be/abc" and rxp.url == nil,
+        "without OpenLink: its popup, and the address is not left behind")
+    w.env.StaticPopup_Show = nil
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#w.reported == 0, "and with no popup either nothing happens, and nothing is reported")
+    rxp.comms = { OpenLink = function() error("open") end }
+    link.scripts.OnClick(link, "LeftButton")
+    Check(#w.reported == 1 and w.reported[1]:find("open", 1, true), "a link that raises is reported and not raised")
 end
 
 -- a click on the step skips it, and a click on a step of the list goes to it, with shift to start
@@ -1477,6 +1653,23 @@ do
         "RestedXP's V2 interface off: no window, and RestedXP's own is left alone")
     w = Start({ rxpWindow = true }, { oldV2 = true })
     Check(w.ns.RXPWindowReady() == true and Window(w) ~= nil, "RestedXP before 4.11.38 (IsGuideWindowEnabled): ready")
+    w = Start({ rxpWindow = true }, { oldV2 = true, v2 = false })
+    Check(Window(w) == nil and w.ns.RXPWindowReady() == false and w.guide.frame.alpha == nil,
+        "and off under it: no window, and RestedXP's own is left alone")
+    w = Start({ rxpWindow = true })
+    w.rxp.v2.IsGuideWindowEnabled = function() return true end
+    w.rxp.v2.IsEnabled = function() return false end
+    Check(w.ns.RXPWindowReady() == false, "both names: the newer one is the one asked")
+    w.rxp.v2.IsGuideWindowEnabled = function() return false end
+    w.rxp.v2.IsEnabled = function() return true end
+    Check(w.ns.RXPWindowReady() == true, "the newer one on: on, whatever the older one says")
+    w.rxp.v2.IsEnabled = "gone"
+    w.rxp.v2.IsGuideWindowEnabled = function() return true end
+    Check(w.ns.RXPWindowReady() == true, "a name that is not a function is passed over")
+    w.rxp.v2.IsEnabled = nil
+    Check(w.ns.RXPWindowReady() == true, "and the older one when it is the only one")
+    w.rxp.v2.IsGuideWindowEnabled = nil
+    Check(w.ns.RXPWindowReady() == false, "neither name: not ready, and nothing is raised")
     w = Start({ rxpWindow = true })
     w.rxp.currentGuide = { empty = true, steps = {} }
     w.rxp.v2:UpdateGuideWindow()
@@ -2643,7 +2836,6 @@ do
     local account = { rxpWindow = true }
     local w = Start(account)
     local f = Window(w)
-    local LOGO = "Interface\\AddOns\\RXPGuides\\Textures\\rxp_logo-64"
     local function Boxes()
         local out = {}
         for _, o in ipairs(w.frames) do
@@ -2652,8 +2844,8 @@ do
         return out
     end
     local boxes = Boxes()
-    Check(#boxes == 1 and boxes[1].logo.shown and boxes[1].logo.texture == LOGO,
-        "RestedXP's logo, from RestedXP's own files, is in the current step's box")
+    Check(#boxes == 1 and boxes[1].logo.shown and boxes[1].logo.texture == "Interface/AddOns/RXPGuides/Textures/v2/rxp-icon-logo",
+        "RestedXP's logo, the icon of its V2 window from its own files, is in the current step's box")
     local logo = boxes[1].logo
     Check(logo.points[1][1] == "TOPRIGHT" and logo.points[1][2] == boxes[1] and logo.points[1][3] == "TOPRIGHT"
         and logo.points[1][4] == -7 and logo.points[1][5] == -7, "in its top right corner")

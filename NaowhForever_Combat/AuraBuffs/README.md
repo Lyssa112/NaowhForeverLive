@@ -7,7 +7,7 @@ defaults come from `ns.FEATURES.auraBuffs`.
 - **Buffs & Consumables:** a row of icons for missing food, flask, elixir and scroll buffs, the Dire Maul
   drinks, Jujus, Zanza, Blasted Lands items and Dragonbreath Chili you carry (Other Buffs Reminder, off by default),
   class buffs missing in your group, and your own class buff (armor, Inner
-  Fire, Battle Shout, poisons, a weapon imbue, a warlock's Firestone or Spellstone, a hunter's aspect) when it is
+  Fire, Battle Shout, poisons, a weapon imbue, a warlock's Firestone, Spellstone or Demonic Sacrifice, a hunter's aspect) when it is
   missing, and the Cozy Sleeping Bag
   out in the world when it is ready and Well-Rested is missing (Sleeping Bag Reminder, off by default), and the
   Elemental Attractor in the world and dungeons while Magical Awareness is missing (Elemental Attractor Reminder,
@@ -125,9 +125,10 @@ NaowhForever_Combat/AuraBuffs/
   to you there. A tank offline, dead or out of sight cannot be read or reached, so it shows nothing. While it is on, the row follows every group member's `UNIT_AURA`,
   `GROUP_ROSTER_UPDATE` and `PLAYER_ROLES_ASSIGNED`, as Raid Buff Reminders do. A cast at you fades it
   only when you are the one tank missing it (`solo`).
-- Righteous Fury (`righteousFury`, Celiby's ask, off until picked) reminds a paladin only with Improved Righteous Fury learned
-  (`tankTalent`, spell 20468, trait node 105634 in TrainingBuilds, build 1.60.1.70790) or while `IsTank` says
-  you are the tank, so a healer or Retribution paladin without the talent never sees it. Talents come in on
+- Righteous Fury (`righteousFury`, Celiby's ask, off until picked) reminds a paladin only with Redoubt learned
+  (`tankTalent`, spell 20127, trait node 105626 in TrainingBuilds, build 1.60.1.70790; one point is enough) or while
+  `IsTank` says you are the tank, so a healer or Retribution paladin without the talent never sees it. Redoubt is a
+  first-tier Protection talent, so a tank has it from level 10; Improved Righteous Fury comes much later. Talents come in on
   `SPELLS_CHANGED`; while it is picked the row also listens to `PLAYER_ROLES_ASSIGNED` and
   `GROUP_ROSTER_UPDATE` (`WatchesRole`), but only to your own `UNIT_AURA`.
 - A weapon reminder fades once every weapon it covers is enchanted (`MissingSlot`), re-read on
@@ -235,6 +236,10 @@ NaowhForever_Combat/AuraBuffs/
   and either stone clears both. They are off until picked (`off`). A click uses the best stone carried, and with
   none carried casts the best Create rank known (`conjure`); that cast does not fade the icon, as the stone is still
   in the bags. A Poisons click with none carried does nothing, since its spell opens the poison window.
+- Demonic Sacrifice (`demonicSacrifice`, Zodi's ask) is cast as spell 18788 but leaves one of four buffs, one per
+  demon (18789 Burning Shadow, 18790 Fel Stamina, 18791 Touch of Fire, 18792 Fel Energy, wago.tools build
+  1.60.1.71037), so the family lists those as `auras` and `Has` looks for them instead of `spells`. It is off until
+  picked, since a Soul Link build has the talent but keeps its demon out. With no demon out the click does nothing.
 - The glow of a reminder (the buff icons, the Campfire's refresh reminder, Low Health) is Pixel Glow or
   Standard Glow, both LibCustomGlow's. Standard is its ButtonGlow, the action button spell alert: Blizzard's
   own `ActionButtonSpellAlertManager` only drives action buttons. Each feature has its own switch

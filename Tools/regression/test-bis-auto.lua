@@ -1,7 +1,7 @@
 -- BiS Auto list: each slot gets the items worth most to the spec's weights, from what you wear and
 -- the pool, that need no more than Levels Ahead (default 5) levels over yours; a one-hander counts
 -- the best off hand beside it; Ring 2 skips Ring 1's pick; an item not loaded yet is asked for and
--- waited on; a kept slot is never refilled.
+-- waited on; a kept slot is never refilled; a gear change ranks against the pool already scored.
 local Load = dofile("Tools/regression/load_files.lua")
 local FILES = { "NaowhForever_BiS/BiS/BiS.lua", "NaowhForever_BiS/BiS/Constants.lua", "NaowhForever_BiS/BiS/Auto.lua" }
 
@@ -50,12 +50,13 @@ local function Fixture(o)
     Load({ FILES[1], FILES[2] }, env)
     local B = ns.BiS
     B.Rankings = {
-        Candidates = function(slot, s) return s.slots[slot] or {} end,
+        Candidates = function(slot, s) o.gathers = (o.gathers or 0) + 1 return s.slots[slot] or {} end,
         DungeonDrops = function(slot) return (o.drops or {})[slot] or {} end,
         LevelPicks = function() return o.levelPicks end,
         Wieldable = function() return true end,
         ReqLevel = function(id) return (o.req or {})[id] or 1 end,
         OtherSideQuest = function(id) return (o.otherSide or {})[id] == true end,
+        OtherClassQuest = function(id) return (o.otherClass or {})[id] == true end,
     }
     B.Lists = { CurrentSpec = function() return spec end, List = function() return o.list or list end,
         Changed = function() end }
@@ -126,6 +127,12 @@ Case("the pool is the ranking, the dungeon drops and the leveling lists", functi
     assert(Join(m.Auto.Build(m.spec)[1]) == "2,1")
 end)
 
+Case("a leveling pick from a quest your class cannot take stays out of the pool", function()
+    local m = Fixture({ levelPicks = { [1] = 2 }, otherClass = { [2] = true }, ranked = { [1] = { 1 } },
+        worth = { [1] = 1, [2] = 9 } })
+    assert(Join(m.Auto.Build(m.spec)[1]) == "1", Join(m.Auto.Build(m.spec)[1]))
+end)
+
 Case("Ring 2 skips Ring 1's pick, and a worn ring counts for either", function()
     local m = Fixture({ worn = { [12] = 12 }, ranked = { [11] = { 10, 11 } }, worth = { [10] = 2, [11] = 1, [12] = 5 } })
     local picks = m.Auto.Build(m.spec)
@@ -192,6 +199,28 @@ Case("only an awaited item the server sends wakes it; a refused one does not", f
     assert(#m.timers == 0, "refused or unawaited: nothing queued")
     m.frame.script(m.frame, "GET_ITEM_INFO_RECEIVED", 2, true)
     assert(#m.timers == 1)
+end)
+
+Case("a gear change ranks what you wear against the pool already scored; a level up or an item arriving scores it again", function()
+    local o = { ranked = { [1] = { 1, 2 } }, worth = { [1] = 1, [2] = 2, [3] = 5, [4] = 9 },
+        loading = { [4] = true }, weights = { str = 1 } }
+    o.ranked[1][3] = 4
+    local m = Fixture(o)
+    m.Auto.Build(m.spec)
+    local gathers = o.gathers
+    o.worn = { [1] = 3 }
+    assert(Join(m.Auto.Build(m.spec)[1]) == "3,2,1", "the worn item competes")
+    o.worn = nil
+    assert(Join(m.Auto.Build(m.spec)[1]) == "2,1", "taken off: gone from the picks")
+    assert(o.gathers == gathers, "gear changes did not gather the pool again")
+    o.loading[4] = nil
+    m.frame.script(m.frame, "GET_ITEM_INFO_RECEIVED", 4, true)
+    assert(Join(m.Auto.Build(m.spec)[1]) == "4,2,1", "the arrived item is scored")
+    assert(o.gathers > gathers)
+    gathers = o.gathers
+    o.level = 21
+    m.Auto.Build(m.spec)
+    assert(o.gathers > gathers, "a level up gathers again")
 end)
 
 Case("switching to another Auto list refills it", function()

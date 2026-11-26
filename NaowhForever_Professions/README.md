@@ -79,7 +79,7 @@ NaowhForever_Professions/
     Detail.lua         the middle column for one of your recipes (P.Detail)
     EnchantSlot.lua    an Enchanting recipe's item slot: pick the item and Create enchants it, no targeting cursor (P.EnchantSlot)
     Learn.lua          the middle column for an unlearned recipe, and the where-lines Detail also uses (P.Learn)
-    Book.lua           the overview's profession cards (P.Book)
+    Book.lua           the overview's profession cards, on the game's card art (P.Book)
     Window.lua         the window: frame, title, skill bar, rank banner, search, Filter, drawing (P.Window)
     Takeover.lua       showing it over Blizzard's window, docking Blizzard's tabs and cards, dragging, events
     TitleButtons.lua   the feature buttons on its title bar, lined up left of the close button (P.TitleButtons)
@@ -344,10 +344,28 @@ Each layer uses only the ones above it, or reads a later one's table at call tim
   is taller than the frame and has empty space on its outer side. It is drawn under Blizzard's gold
   selected art so the open tab still shows. The Unlearn button beside a skill bar is drawn from the
   atlas `Profession-button-red-crossmark` at 20px and full strength; where that atlas is missing it falls back to the red cross of `ReadyCheck-NotReady`, or the button shows nothing.
-- With the overview docked our window holds secure buttons and is protected, so closing it in combat
-  makes it transparent instead of hiding it. Resizing waits for combat to end for the same reason.
-  It cannot be dragged in combat either, and a drag still going when combat starts ends there:
-  `PLAYER_REGEN_DISABLED` fires before the lockdown, while it can still be let go of.
+- With the overview docked our window holds secure buttons and is protected, so no protected window
+  stays up through combat. `PLAYER_REGEN_DISABLED` fires before the lockdown, while the cards can still
+  move: a docked overview gives them back and hides, and the game's own overview shows until combat
+  ends, when ours comes back. An overview opened in combat is the game's for the same reason. A
+  recipe list holds nothing secure and stays ours in combat.
+- As a guard, the first dock makes a secure state handler of its own (`SecureHandlerStateTemplate` on
+  UIParent, `[combat] on; off`) that hides our window if it is still protected once the lockdown starts.
+  It only ever hides, and only a protected window, so it never fights our own showing and hiding.
+  Closing a window still protected in combat makes it transparent instead of hiding it, and
+  resizing waits for combat to end, for the same reason. It cannot be dragged in combat either, and a
+  drag still going when combat starts ends there.
+- With the Forever skin each overview card is drawn on the game's card art for its profession
+  (`profession-overview-card-<profession>-c60`, the Cooking, Fishing and First Aid ones
+  `-generic-`), through the shared `Parts.ForeverCard`; a profession the game has no card for, or an
+  empty slot, wears its plain `profession-overview-card-c60`. The art takes the place of our flat
+  card and border; where this client has neither atlas the flat card stays, as it does with the skin
+  off. Cards are matched by skill line, which Forever keeps from Classic (Alchemy 171). The client
+  cannot look these atlases up by name, so all of them are in the shared `FOREVER_ART_FILES` and drawn
+  from their files.
+- On the overview the title bar keeps the buttons that need no open profession: Shopping List,
+  Crafting Queue, Reagents and Alts show there (each also answers `P.Book.Render`, so they exist when
+  the overview is the first thing opened), and Disenchant, Skill-up Plan, Link and TSM hide.
 - Once dragged, Blizzard's window is moved to where ours was put, out of combat only (it holds secure
   buttons); anchoring it to ours instead would make ours protected. The panel manager places it
   again whenever any panel opens or closes, so its SetPoint is hooked. EllesmereUI's Shifter puts
@@ -433,8 +451,8 @@ Each layer uses only the ones above it, or reads a later one's table at call tim
   bind and still sells on the auction house.
 - Favourites are kept per character GUID by spell ID, which is also a known recipe's recipeID. A known one
   is told to the game too, so Blizzard's own favourites count; an unlearned one lives in the account
-  store under that character's GUID. Each character starts from the former profile-wide
-  list the first time it loads, and that list stays in the profile for the others. Favourites and the
+  store under that character's GUID. The first character to load takes the former profile-wide list,
+  which then leaves the profile, so a new character never starts with an alt's favourites. Favourites and the
   crafting queue are empty and unsaved until the game knows the player's GUID.
 - Prices: a vendor reagent costs its merchant price when that is no more than the lowest buyout at
   the last scan, else the buyout; the auction house keeps 5% of a sale. The merchant price is the
@@ -470,7 +488,8 @@ Each layer uses only the ones above it, or reads a later one's table at call tim
   matched in your group by the link's GUID, else by name without your realm; the order goes to party
   (or instance) chat when they are in your party, else by whisper, also in a raid.
 - Forever's GetProfessions answers prof1, prof2, First Aid, Fishing, Cooking; the overview runs
-  Cooking, Fishing, First Aid, as Blizzard's book does.
+  Cooking, Fishing, First Aid, as Blizzard's book does. An unlearned card takes its name and card
+  art from `SECONDARIES` in Book.lua, in that same order.
 - Profession trainers on Forever ask less than Wowhead lists, so what a trainer window asks is kept
   account-wide, matched by name within its profession (the service list has no spell IDs).
 - Merchants teach recipe prices the same way: while Unlearned Recipes is on, each recipe item a merchant
@@ -557,9 +576,8 @@ Each layer uses only the ones above it, or reads a later one's table at call tim
   selected only when its own profession is open; otherwise the open profession keeps its selection and
   the queue waits on Open First. The `ns.OnApply` listener acts only when the queue turns on or off.
 - Character profession state uses `Shared.CharacterData`: Forever surnames let two characters share a
-  first name, so name and realm are not unique. A former name-and-realm table is copied once when each
-  GUID first uses it, then the GUID copies change independently; the legacy table stays for characters
-  that have not logged in since the migration.
+  first name, so name and realm are not unique. A former name-and-realm table moves to the first GUID
+  that uses it. It used to stay, and every later character with that first name started with a copy.
 - The Consumables picker offers the Well Fed food, flasks, elixirs and stat scrolls of Naowh's consumables
   list (the one in his profile, from Wowhead Forever), the Buff Reminders' weapon stones and oils, the
   healing and mana potions in `Shared/Game/Consumables.lua` and the Smart Macros' bandages. Plain food and
