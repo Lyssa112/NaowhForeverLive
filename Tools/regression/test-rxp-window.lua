@@ -487,6 +487,18 @@ do
     w = Start({ rxpWindow = true }, { disabled = true })
     Check(#w.printed == 0, "disabled and RestedXP's global not there: nor is it said to have changed")
 
+    w = Start({ rxpWindow = true }, { v2 = false })
+    Check(w.ns.RXPWindowOff() == true and w.ns.RXPWindowWhyText():find("Press Turn On under RestedXP Naowh Window (V2)", 1, true)
+        and w.printed[1]:find("Enable Beta Features and Enable V2 Interface in RestedXP's settings", 1, true),
+        "off: the settings page asks, with the text of the chat line, which says where to press and what RestedXP calls it")
+    w = Start({ rxpWindow = true })
+    Check(w.ns.RXPWindowOff() == false and w.ns.RXPWindowWhyText() == nil, "ready: not off, and nothing to say")
+    w = Start({ rxpWindow = true }, { v2Switch = "Unknown" })
+    Check(w.ns.RXPWindowOff() == false and w.ns.RXPWindowWhyText():find("changed the interface", 1, true),
+        "changed: not off, and its own text")
+    w = Start({ rxpWindow = true }, { v2 = false, disabled = true })
+    Check(w.ns.RXPWindowWhyText() == nil, "RestedXP disabled: no text, as the chat says nothing")
+
     w = Start({ rxpWindow = true }, { v2 = false, setupPending = true })
     Check(#w.printed == 0, "off while Naowh turns it on at the next reload: nothing, the reload says so")
     w.ns.RXPSetUpPending = function() return false end

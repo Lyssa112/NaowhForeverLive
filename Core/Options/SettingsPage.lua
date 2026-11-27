@@ -31,7 +31,16 @@ local TEXT_COLORS_RELOAD = ns.L("Reload UI to apply your color changes.")
 local TEXT_FADE_TIP = "The color and its opacity. Lower the opacity to see through the addon's windows."
 local TEXT_RXP_RELOAD = ns.L("Reload UI to apply your RestedXP changes.")
 local TEXT_RXP_PICK_RELOAD = "Reload UI to pick a theme."
-local TEXT_RXP_WINDOW_NEEDS = "Turn on RestedXP's Beta Features and V2 interface."
+local TEXT_V2_OFF = "RestedXP's Enable Beta Features and Enable V2 Interface are off for this character, so the Naowh window cannot show. Turn them on with the button below."
+local TEXT_V2_RELOAD = "Reload UI to turn on RestedXP's Enable Beta Features and Enable V2 Interface for this character."
+local TEXT_V2_STATE = "RestedXP V2 (This Character): %s"
+local TEXT_V2_TIP = "Turns on RestedXP's V2 interface and the Naowh theme for the character you are playing now."
+local V2_READY, V2_PENDING, V2_OFF = "ready", "pending", "off"
+local V2_ROWS = {
+    [V2_READY] = { state = "On", button = "Set Up" },
+    [V2_PENDING] = { state = "Reload UI", button = "Reload UI" },
+    [V2_OFF] = { state = "Off", button = "Turn On" },
+}
 local TEXT_WINDOW_THEME_CURRENT = "Current Theme"
 local TEXT_SKIN_RELOAD = ns.L("Reload UI to change the skin.")
 local TEXT_SKIN_TIP = ns.L("Dresses the addon's windows as Naowh's own or WoW Forever's, after a reload.")
@@ -568,17 +577,35 @@ local function RxpWindowStyleRows(W, parent, y)
     return y - h
 end
 
-local function SetUpRows(W, parent, y)
+local function V2State()
+    if ns.RXPWindowReady() then return V2_READY end
+    if ns.RXPSetUpPending() then return V2_PENDING end
+    if ns.RXPWindowOff() then return V2_OFF end
+end
+
+local function V2Note(state)
+    if state == V2_OFF then return TEXT_V2_OFF end
+    if state == V2_PENDING then return TEXT_V2_RELOAD end
+    if state == nil then return ns.RXPWindowWhyText() end
+end
+
+local function V2Cell(state)
+    local row = V2_ROWS[state]
+    if not row then return Empty() end
+    return { type = "button", text = ns.L(TEXT_V2_STATE, ns.L(row.state)), buttonText = row.button,
+        tooltip = TEXT_V2_TIP,
+        onClick = function()
+            if ns.RXPSetUpCharacter() == "reload" then RxpChanged() else UI:RefreshPage(true) end
+        end }
+end
+
+local function SetUpRows(W, parent, y, state)
     local _, h = W:DualRow(parent, y,
         { type = "toggle", text = "Set Up New Characters",
           tooltip = "Turns on RestedXP's new interface and the Naowh theme for a character that has not been set up.",
           getValue = ns.RXPSetUpEnabled,
           setValue = function(v) ns.SetRXPSetUp(v) end },
-        { type = "button", text = "This Character", buttonText = "Set Up",
-          tooltip = "Turns them on for the character you are playing now.",
-          onClick = function()
-              if ns.RXPSetUpCharacter() == "reload" then RxpChanged() else UI:RefreshPage(true) end
-          end }
+        V2Cell(state)
     )
     return y - h
 end
@@ -588,16 +615,17 @@ local function RxpWindowRows(W, parent, y)
     local _, h = W:SwitchFold(parent, "RestedXP Naowh Window (V2)", y, {
         get = ns.RXPWindowEnabled,
         set = function(v)
+            local reload = v and ns.RXPSetUpWindow() == "reload"
             ns.SetRXPWindow(v)
-            UI:RefreshPage(true)
+            if reload then RxpChanged() else UI:RefreshPage(true) end
         end,
         tooltip = "RestedXP's guide and active steps in one Naowh window, in place of its own and of the theme.",
         rows = on, open = UI.filter ~= nil }); y = y - h
     if not on then return y end
-    y = SetUpRows(W, parent, y)
-    if not ns.RXPWindowReady() then
-        _, h = W:DualRow(parent, y, { type = "label", text = TEXT_RXP_WINDOW_NEEDS }, Empty()); y = y - h
-    end
+    local state = V2State()
+    local note = V2Note(state)
+    if note then _, h = W:Note(parent, note, y); y = y - h end
+    y = SetUpRows(W, parent, y, state)
     local stepsMin, stepsMax, stepsStep = ns.RXPWindowStepsRange()
     local scaleMin, scaleMax, scaleStep = ns.RXPWindowScaleRange()
     _, h = W:DualRow(parent, y,

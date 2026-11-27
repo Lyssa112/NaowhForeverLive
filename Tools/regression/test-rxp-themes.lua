@@ -2018,7 +2018,8 @@ do
     rxp, _, confirms, _, boot = Run(account, profile, "Player-1", true)
     Check(Untouched(profile) and #rxp.reloads == 0,
         "turned on with the window: RestedXP's settings are left alone while this UI runs")
-    Check(#confirms == 1, "a reload is asked for, to use the interface")
+    Check(#confirms == 1 and confirms[1]:find("Enable Beta Features and Enable V2 Interface", 1, true),
+        "a reload is asked for, to use the interface, which names RestedXP's two switches")
     Check(boot.events.PLAYER_LOGOUT == true, "and the settings wait for the UI to unload")
     Check(account.rxpSetUp == nil or account.rxpSetUp["Player-1"] == nil, "nothing is kept as done before then")
     Logout(boot)
@@ -2162,6 +2163,41 @@ do
         "the button asks for the reload, wished for or not, seen or not")
     Logout(boot)
     Check(manual.enableV2Interface == true and manual.activeTheme == CURRENT, "and sets it as the UI unloads")
+
+    -- the window's switch: the reload is asked for at once, before the window is on, and written once it is
+    local function Switch(off, switches, guid)
+        local _, theNs, asks, _, theBoot, turn = Run({}, switches, guid, false, true)
+        theNs.RXPWindowOff = function() return off end
+        return theNs, asks, theBoot, turn
+    end
+    local unset = { activeTheme = "RXP Blue" }
+    local unsetNs, unsetAsks, unsetBoot, unsetTurn = Switch(true, unset, "Player-W")
+    Check(unsetNs.RXPSetUpWindow() == "reload" and #unsetAsks == 1 and unsetAsks[1]
+        == "Naowh turned on RestedXP's Enable Beta Features and Enable V2 Interface for this character. Reload UI to use the Naowh window.",
+        "the window's switch with V2 off: the reload is asked for, in RestedXP's words")
+    Check(Untouched(unset) and unsetBoot.events.PLAYER_LOGOUT == true and unsetNs.RXPSetUpPending() == true,
+        "nothing is written while the UI runs, the settings wait for it to unload, and the set up is pending")
+    Check(unsetNs.RXPSetUpWindow() == nil and #unsetAsks == 1, "and it is not asked twice")
+    unsetTurn(true)
+    Logout(unsetBoot)
+    Check(unset.enableBetaFeatures == true and unset.enableV2Interface == true and unset.activeTheme == CURRENT,
+        "the window turned on after it: written as the UI unloads")
+    local never = { activeTheme = "RXP Blue" }
+    local neverNs, _, neverBoot = Switch(true, never, "Player-W2")
+    neverNs.RXPSetUpWindow()
+    Logout(neverBoot)
+    Check(Untouched(never), "the window not turned on at the reload: nothing is written")
+    local onNs, onAsks, onBoot = Switch(false, { activeTheme = "RXP Blue" }, "Player-W3")
+    Check(onNs.RXPSetUpWindow() == nil and #onAsks == 0 and not onBoot.events.PLAYER_LOGOUT and not onNs.RXPSetUpPending(),
+        "V2 on already: nothing is asked, and nothing waits")
+    local bothNs, bothAsks = Switch(true, { activeTheme = "RXP Blue", enableBetaFeatures = true, enableV2Interface = true }, "Player-W4")
+    Check(bothNs.RXPSetUpWindow() == nil and #bothAsks == 0, "its switches on, waiting for RestedXP's own reload: nothing is asked")
+    local halfNs, halfAsks = Switch(true, { activeTheme = "RXP Blue", enableV2Interface = true }, "Player-W5")
+    Check(halfNs.RXPSetUpWindow() == "reload" and #halfAsks == 1, "one of the two on is not enough")
+    local noneNs, noneAsks = Switch(true, nil, "Player-W6")
+    Check(noneNs.RXPSetUpWindow() == nil and #noneAsks == 0, "no profile: nothing")
+    local nobodyNs, nobodyAsks = Switch(true, { activeTheme = "RXP Blue" }, nil)
+    Check(nobodyNs.RXPSetUpWindow() == nil and #nobodyAsks == 0, "no character to say who it is: nothing")
 
     -- what is missing raises nothing
     _, _, confirms = Run({ rxpThemes = true, rxpSetup = true }, nil, "Player-9", true)

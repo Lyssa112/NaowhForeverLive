@@ -22,7 +22,7 @@ local RXP_ADDON = "RXPGuides"
 local V2_SWITCH = { "IsEnabled", "IsGuideWindowEnabled" }
 local WHY_OFF, WHY_CHANGED = "off", "changed"
 local TEXT_WHY = {
-    [WHY_OFF] = ns.L("RestedXP's V2 interface is off, so the Naowh window cannot show. Turn on Enable Beta Features and Enable V2 Interface in RestedXP's settings, then reload."),
+    [WHY_OFF] = ns.L("RestedXP's V2 interface is off, so the Naowh window cannot show. Press Turn On under RestedXP Naowh Window (V2) in Naowh's settings, or turn on Enable Beta Features and Enable V2 Interface in RestedXP's settings, then reload."),
     [WHY_CHANGED] = ns.L("RestedXP changed the interface the Naowh window needs, so it cannot show. Check for an update of Naowh Forever."),
 }
 local SHADOW, SHADOW_ALPHA = 1, 0.9
@@ -1075,6 +1075,16 @@ end
 
 function ns.RXPWindowReady()
     return ns.RXPWindowWhy() == nil
+end
+
+function ns.RXPWindowOff()
+    return ns.RXPWindowWhy() == WHY_OFF
+end
+
+function ns.RXPWindowWhyText()
+    local why = ns.RXPWindowWhy()
+    if not why or not C_AddOns.IsAddOnLoaded(RXP_ADDON) then return nil end
+    return TEXT_WHY[why]
 end
 
 function ns.RXPWindowActive()

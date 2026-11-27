@@ -109,6 +109,18 @@ Core/Integrations/RestedXP/
   that interface on at the next reload (`ns.RXPSetUpPending`), as that reload is the answer. Nothing is said unless
   RestedXP is loaded (`C_AddOns.IsAddOnLoaded`): an installed RestedXP that is disabled has no interface to be off
   or to have changed, and `DoesAddOnExist` is true for it.
+- The settings page says it where the player looks, not only in chat. Under the window's switch there is a note for
+  each reason: V2 off names what is off in RestedXP's own words (Enable Beta Features, Enable V2 Interface) and
+  points at the button below, a reload that is pending says to reload, and a changed RestedXP gets the chat's text
+  (`ns.RXPWindowWhyText`, which is nothing while RestedXP is not loaded, as in chat). Beside Set Up New Characters
+  a row has the state of V2 for the character played and its button: Off with Turn On, Reload UI while the reload
+  is waited for, On with Set Up. It is empty for a changed RestedXP: no button can mend that. A row that is only a
+  button called Set Up did not say it was needed, or that anything was off.
+- Turning the window's switch on with V2 off asks for the reload at once (`ns.RXPSetUpWindow`), the same dialog
+  and the same write at `PLAYER_LOGOUT` as the button, so a player does not have to find the button. It is asked
+  before the window is turned on, so that the chat line, which is not said while a reload is pending, is not said
+  as well. It asks only when `ns.RXPWindowOff` (RestedXP says V2 is off), the character's two switches are not
+  both on already (RestedXP's own reload is what is missing then, not ours to ask for) and none is pending.
 - The list under the active step is the guide's steps as `v2:BuildGuideStepsSnapshot` has them, which
   is what RestedXP's own v2 guide window lists: a step it hides is not listed, and a step done is, a
   little dimmer, so that a step can be gone back to. It starts at the first step after the active one

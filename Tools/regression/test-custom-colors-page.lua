@@ -55,6 +55,7 @@ local function RealCore(account, rxp, up)
     env._G = env
     env.RXP = up
     env.InCombatLockdown = function() return false end
+    env.UnitGUID = function() return "Player-1" end
     setmetatable(env, { __index = _G })
     local core = assert(loadstring(coreSource, "Core"))
     setfenv(core, env)
@@ -81,12 +82,14 @@ end
 
 -- rxp: RestedXP Guides is installed. up: its table in the game, when it has started with our themes in it.
 local function Page(account, rxp, up)
-    local e = { confirms = {}, refreshes = 0, account = account, rxp = up }
+    local e = { confirms = {}, refreshes = 0, account = account, rxp = up, noteAt = {} }
     local ns = RealCore(account, rxp, up)
     e.ns = ns
     ns.Confirm = function(text, onYes) e.confirms[#e.confirms + 1] = { text = text, yes = onYes } end
     e.reloads = {}
     ns.ConfirmReload = function(text) e.reloads[#e.reloads + 1] = text end
+    e.printed = {}
+    ns.Print = function(text) e.printed[#e.printed + 1] = text end
     local env = { ns = ns, W = {}, colorsPending = false, rxpPending = false,
         UI = { RefreshPage = function() e.refreshes = e.refreshes + 1 end,
             FontChoices = function() return { [""] = "Addon Font" }, { "" } end,
@@ -117,12 +120,13 @@ local function Page(account, rxp, up)
     end
     function env.W:Note(_, text)
         e.notes[#e.notes + 1] = text
+        e.noteAt[#e.notes] = #e.rows
         return nil, 0
     end
     setmetatable(env, { __index = _G })
     setfenv(chunk, env)
     function e.build()
-        e.rows, e.notes, e.headers = {}, {}, {}
+        e.rows, e.notes, e.headers, e.noteAt = {}, {}, {}, {}
         chunk({}, 0)
     end
     e.build()
@@ -408,19 +412,19 @@ do
         "its tooltip is one short sentence")
 
     Check(beside == nil and toggle.folds == false, "it is a fold's switch: nothing beside it, and nothing to fold")
-    local NEEDS = "Turn on RestedXP's Beta Features and V2 interface."
     Check(Layout(e) == "RestedXP Theme (V1)|, RestedXP Naowh Window (V2)|, Style RestedXP's Arrow|",
         "with them off: the switch of V1, of V2, and the arrow's own, and nothing else")
     Check(Hidden(e), "and none of the other RestedXP choices is shown")
     local window = Pair(e, "RestedXP Naowh Window (V2)")
     Check(window and window.type == "toggle" and window.getValue() == false and a.rxpWindow == nil and window.folds == false,
         "a RestedXP Naowh Window (V2) switch, off by default")
-    Check(Pair(e, "Listed Steps") == nil and Pair(e, NEEDS) == nil, "and no steps or note while it is off")
+    Check(Pair(e, "Listed Steps") == nil and #e.notes == 0, "and no steps or note while it is off")
     window.setValue(true)
     Check(a.rxpWindow == true, "on is stored")
     e.build()
-    Check(Pair(e, "RestedXP Naowh Window (V2)").folds == true and Pair(e, NEEDS) ~= nil,
-        "on: it folds what follows, and says what it needs while RestedXP's V2 interface is off")
+    Check(Pair(e, "RestedXP Naowh Window (V2)").folds == true and #e.notes == 1
+        and e.notes[1]:find("changed the interface", 1, true),
+        "on: it folds what follows, and says so when RestedXP has no V2 switch we know")
     local steps, scale = Pair(e, "Listed Steps")
     Check(steps and steps.type == "slider" and steps.min == 0 and steps.max == 12 and steps.step == 1,
         "on: the steps listed after the active one")
@@ -436,6 +440,7 @@ do
     Check(a.rxpWindowSteps == nil and a.rxpWindowScale == nil, "and the defaults are not stored")
     Pair(e, "RestedXP Naowh Window (V2)").setValue(false)
     Check(a.rxpWindow == nil, "off is not stored")
+    e.build()
     Check(#e.notes == 0, "no hint before a change")
     local refreshed = e.refreshes
     toggle.setValue(true)
@@ -728,7 +733,7 @@ do
     barSize.setValue(3)
     Check(plain.account.rxpWindowColors and plain.account.rxpWindowColors.barBorder.r == 1
         and plain.account.rxpWindowBarBorderSize == 3, "and a pick and a size are kept")
-    local pick = Page({ rxpWindow = true }, true)
+    local pick = Page({ rxpWindow = true }, true, { v2 = { IsEnabled = function() return true end } })
     local picker = All(pick, "Window Theme")[1]
     local refreshed = pick.refreshes
     picker.setValue("custom")
@@ -743,8 +748,8 @@ do
 end
 
 do
-    -- setting a character up: in the window's section (V2), when the window is wished for, off to start, and a
-    -- button for the one played
+    -- setting a character up: in the window's section (V2), when the window is wished for. What it needs is said where
+    -- the player looks: a note under the switch, then the state of RestedXP's V2 for the character with its button
     local function Cells(page)
         local out = {}
         for _, row in ipairs(page.rows) do
@@ -752,45 +757,97 @@ do
         end
         return out
     end
-    local none = Cells(Page({}, true))
-    Check(none["Set Up New Characters"] == nil and none["This Character"] == nil,
-        "nothing wished for: no row of it")
-    local themed = Page({ rxpThemes = true }, true)
-    Check(Cells(themed)["Set Up New Characters"] == nil and Cells(themed)["This Character"] == nil,
-        "the theme (V1) wished for: none, it is the window's (V2)")
-    local s = Page({ rxpWindow = true }, true)
-    local cells = Cells(s)
-    local toggle, button = cells["Set Up New Characters"], cells["This Character"]
-    Check(toggle and toggle.type == "toggle" and toggle.getValue() == false, "with the window wished for: a switch, off to start")
-    local function Position(page, name)
-        local at = 0
-        for _, row in ipairs(page.rows) do
+    local function RowOf(page, name)
+        for at, row in ipairs(page.rows) do
             for _, cell in ipairs(row) do
-                at = at + 1
                 if cell.text == name then return at end
             end
         end
     end
-    local switch, set, note = Position(s, "RestedXP Naowh Window (V2)"), Position(s, "Set Up New Characters"),
-        Position(s, "Turn on RestedXP's Beta Features and V2 interface.")
-    local steps, scale = Position(s, "Listed Steps"), Position(s, "Naowh Window Scale")
-    Check(switch and set and note and steps and scale and switch < set and set < note and note < steps
-        and steps < scale, "in the window's section it is the first thing: before what it needs and its sliders")
-    Check(Position(s, "This Character") == set + 1, "and the button for the character played is beside it")
+    local function V2(on, profile)
+        return { v2 = { IsEnabled = function() return on end }, settings = { profile = profile or {} } }
+    end
+    local BOTH = { enableBetaFeatures = true, enableV2Interface = true }
+    local STATE = "RestedXP V2 (This Character): "
+    local ASKED = "Naowh turned on RestedXP's Enable Beta Features and Enable V2 Interface for this character. "
+        .. "Reload UI to use the Naowh window."
+    local none = Cells(Page({}, true))
+    Check(none["Set Up New Characters"] == nil and none[STATE .. "Off"] == nil, "nothing wished for: no row of it")
+    local themed = Cells(Page({ rxpThemes = true }, true, V2(false)))
+    Check(themed["Set Up New Characters"] == nil and themed[STATE .. "Off"] == nil,
+        "the theme (V1) wished for: none, it is the window's (V2)")
+
+    local s = Page({ rxpWindow = true }, true, V2(false))
+    local cells = Cells(s)
+    local toggle, button = cells["Set Up New Characters"], cells[STATE .. "Off"]
+    Check(toggle and toggle.type == "toggle" and toggle.getValue() == false, "with the window wished for: a switch, off to start")
     Check(("," .. table.concat(s.headers, ",") .. ","):find(",RESTEDXP,", 1, true) == nil,
         "and there is no section of shared rows for it")
-    Check(button and button.type == "button" and button.buttonText == "Set Up", "and a button for the character played")
+    Check(#s.notes == 1 and s.notes[1]:find("Enable Beta Features and Enable V2 Interface are off for this character", 1, true)
+        and s.notes[1]:find("button below", 1, true), "V2 off: a note says what is off, in RestedXP's words, and what to press")
+    local switchAt, setAt, stepsAt = RowOf(s, "RestedXP Naowh Window (V2)"), RowOf(s, "Set Up New Characters"),
+        RowOf(s, "Listed Steps")
+    Check(switchAt and setAt and stepsAt and s.noteAt[1] == switchAt and switchAt < setAt and setAt < stepsAt,
+        "the note is right under the switch, before the set up and the sliders")
+    Check(RowOf(s, STATE .. "Off") == setAt, "and the state of RestedXP's V2 is beside the set up")
+    Check(button and button.type == "button" and button.buttonText == "Turn On"
+        and button.tooltip == "Turns on RestedXP's V2 interface and the Naowh theme for the character you are playing now.",
+        "off: the button says what it does")
     toggle.setValue(true)
     Check(s.account.rxpSetup == true and toggle.getValue() == true, "turned on, it is kept")
     toggle.setValue(false)
     Check(s.account.rxpSetup == nil, "and the default is not")
     local refreshed = s.refreshes
-    s.ns.RXPSetUpCharacter = function() return "reload" end
     button.onClick()
-    Check(s.refreshes == refreshed + 1, "the button draws the page again with its reload note")
+    Check(#s.reloads == 1 and s.reloads[1] == ASKED, "the button asks for the reload, in RestedXP's words")
+    Check(s.refreshes == refreshed + 1 and s.ns.RXPSetUpPending(), "and draws the page again with its reload note")
+    s.build()
+    local waiting = Cells(s)[STATE .. "Reload UI"]
+    Check(waiting and waiting.buttonText == "Reload UI" and Cells(s)[STATE .. "Off"] == nil and #s.notes == 2
+        and s.notes[1] == "Reload UI to turn on RestedXP's Enable Beta Features and Enable V2 Interface for this character."
+        and s.notes[2] == RXP_HINT and s.noteAt[1] < s.noteAt[2],
+        "once asked: the state says to reload, with a button for it, and the note says what the reload does")
+    waiting.onClick()
+    Check(#s.reloads == 2, "and the button asks again")
     s.ns.RXPSetUpCharacter = function() return nil end
-    button.onClick()
-    Check(s.refreshes == refreshed + 2, "and when nothing needed a reload")
+    local drawn = s.refreshes
+    waiting.onClick()
+    Check(s.refreshes == drawn + 1, "and when nothing needed a reload, the page is drawn again")
+
+    local ready = Page({ rxpWindow = true }, true, V2(true, BOTH))
+    local on = Cells(ready)[STATE .. "On"]
+    Check(#ready.notes == 0 and on and on.buttonText == "Set Up"
+        and RowOf(ready, STATE .. "On") == RowOf(ready, "Set Up New Characters"),
+        "V2 on: no note, the state says so, and the button keeps its old job, the set up")
+    local changed = Page({ rxpWindow = true }, true, { v2 = {}, settings = { profile = {} } })
+    Check(#changed.notes == 1 and changed.notes[1]:find("changed the interface", 1, true)
+        and Cells(changed)[STATE .. "Off"] == nil and Cells(changed)[STATE .. "On"] == nil,
+        "a RestedXP with no switch we know: its changed note, and no button that could not do anything")
+
+    local flip = Page({}, true, V2(false))
+    local window = Cells(flip)["RestedXP Naowh Window (V2)"]
+    window.setValue(true)
+    Check(flip.account.rxpWindow == true and #flip.reloads == 1 and flip.reloads[1] == ASKED and flip.ns.RXPSetUpPending(),
+        "the window's switch turned on while V2 is off: the reload is asked for at once")
+    Check(#flip.printed == 0, "and the chat line is not said as well: the reload is the answer")
+    flip.build()
+    Check(flip.notes[#flip.notes] == RXP_HINT, "and the page says to reload, as after the button")
+    window.setValue(false)
+    window.setValue(true)
+    Check(#flip.reloads == 1, "and not again while it waits")
+    local quiet = Page({}, true, V2(true, BOTH))
+    quiet.ns.RXPWindowStart = function() end
+    Cells(quiet)["RestedXP Naowh Window (V2)"].setValue(true)
+    Check(quiet.account.rxpWindow == true and #quiet.reloads == 0, "with V2 on already: nothing is asked")
+    local half = Page({}, true, V2(false, BOTH))
+    Cells(half)["RestedXP Naowh Window (V2)"].setValue(true)
+    Check(#half.reloads == 0, "with its switches on and V2 waiting for RestedXP's own reload: nothing is asked")
+    local unknown = Page({}, true, { v2 = {}, settings = { profile = {} } })
+    Cells(unknown)["RestedXP Naowh Window (V2)"].setValue(true)
+    Check(#unknown.reloads == 0, "with a RestedXP whose switch is not known: nothing is asked")
+    local off = Page({ rxpWindow = true }, true, V2(false))
+    Cells(off)["RestedXP Naowh Window (V2)"].setValue(false)
+    Check(off.account.rxpWindow == nil and #off.reloads == 0, "turned off: nothing is asked")
 end
 
 do

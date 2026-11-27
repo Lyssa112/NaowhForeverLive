@@ -10,7 +10,7 @@ local CURRENT_KEY, CURRENT_NAME = "current", ns.L("Naowh (current)")
 local RXP_DEFAULT = "Default"
 local TEXT_RXP_DEFAULT = ns.L("RestedXP (default)")
 local TEXT_CURRENT = ns.L("Current Theme")
-local TEXT_SETUP = ns.L("Naowh turned on RestedXP's new interface for this character. Reload UI to use it.")
+local TEXT_SETUP = ns.L("Naowh turned on RestedXP's Enable Beta Features and Enable V2 Interface for this character. Reload UI to use the Naowh window.")
 
 local RXP_TEXTURES = "Interface/AddOns/RXPGuides/Textures/"
 local TEXTURES = RXP_TEXTURES .. "DarkMode/"
@@ -838,6 +838,17 @@ local function TurnOnV2()
     CenterArrow(rxp, profile)
 end
 
+local function V2Unset(profile)
+    return not (profile.enableBetaFeatures and profile.enableV2Interface)
+end
+
+local function PendV2(guid)
+    setUpGuid = guid
+    boot:RegisterEvent("PLAYER_LOGOUT")
+    ns.ConfirmReload(TEXT_SETUP)
+    return "reload"
+end
+
 local function SetUp(force)
     local rxp = _G.RXP
     local profile = Dig(rxp, "settings", "profile")
@@ -845,12 +856,7 @@ local function SetUp(force)
     if type(profile) ~= "table" or type(guid) ~= "string" then return end
     local done = SetUpDone()
     if done[guid] and not force then return end
-    if ns.RXPWindowEnabled() and not (profile.enableBetaFeatures and profile.enableV2Interface) then
-        setUpGuid = guid
-        boot:RegisterEvent("PLAYER_LOGOUT")
-        ns.ConfirmReload(TEXT_SETUP)
-        return "reload"
-    end
+    if ns.RXPWindowEnabled() and V2Unset(profile) then return PendV2(guid) end
     done[guid] = true
     CenterArrow(rxp, profile)
     if ns.RXPWindowEnabled() then Register() end
@@ -866,6 +872,14 @@ end
 
 function ns.RXPSetUpCharacter()
     return SetUp(true)
+end
+
+function ns.RXPSetUpWindow()
+    local profile = Dig(_G.RXP, "settings", "profile")
+    local guid = UnitGUID("player")
+    if setUpGuid or type(profile) ~= "table" or type(guid) ~= "string" then return end
+    if not ns.RXPWindowOff() or not V2Unset(profile) then return end
+    return PendV2(guid)
 end
 
 local function OnBootEvent(self, event, name)
