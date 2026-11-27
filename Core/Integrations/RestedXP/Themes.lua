@@ -148,6 +148,23 @@ end
 
 ns.RXPSafe = { Has = Has, Dig = Dig, Run = Run }
 
+function ns.RXPFlightTimersAvailable()
+    return type(Dig(_G.RXP, "FPDB")) == "table" and type(Dig(_G.RXP, "settings", "profile")) == "table"
+end
+
+function ns.RXPFlightTimers()
+    return Dig(_G.RXP, "settings", "profile", "showFlightTimers") ~= false
+end
+
+function ns.SetRXPFlightTimers(on)
+    local rxp = _G.RXP
+    local profile = Dig(rxp, "settings", "profile")
+    if type(profile) ~= "table" then return end
+    profile.showFlightTimers = on == true
+    local name = on and "ShowTimers" or "HideTimers"
+    if Has(rxp, name) then Run(name, rxp[name]) end
+end
+
 local function Visible(region)
     return region ~= nil and region:IsVisible()
 end
